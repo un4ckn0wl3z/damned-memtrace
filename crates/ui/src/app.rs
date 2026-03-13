@@ -4,7 +4,7 @@ use dioxus::prelude::*;
 use memlib::{
     get_process_modules, get_processes, parse_base_address, parse_offsets, ProcessHandle,
     ProcessInfo, TraversalResult, EntityResult, SavedMemoryScan, SavedEntityScan,
-    save_memory_scan, load_memory_scan, save_entity_scan, load_entity_scan,
+    save_memory_scan, load_memory_scan, save_entity_scan, load_entity_scan, export_to_cpp,
 };
 use std::sync::Arc;
 
@@ -851,6 +851,36 @@ pub fn App() -> Element {
                                     },
                                     "📂 Load"
                                 }
+                                if active_tab() == "memory" {
+                                    button {
+                                        class: "btn btn-small",
+                                        onclick: move |_| {
+                                            if results().is_empty() {
+                                                status_message.set("No results to export".to_string());
+                                                return;
+                                            }
+                                            let res = results();
+                                            let base = base_address_input();
+                                            let offs = offsets_input();
+                                            spawn(async move {
+                                                let file = rfd::AsyncFileDialog::new()
+                                                    .add_filter("C++ Header", &["h", "hpp"])
+                                                    .set_file_name("GameStruct.h")
+                                                    .save_file()
+                                                    .await;
+                                                if let Some(f) = file {
+                                                    let path = f.path().to_string_lossy().to_string();
+                                                    let cpp_code = export_to_cpp(&res, "GameStruct", &base, &offs);
+                                                    match std::fs::write(&path, cpp_code) {
+                                                        Ok(_) => status_message.set(format!("Exported to {}", path)),
+                                                        Err(e) => status_message.set(format!("Export failed: {}", e)),
+                                                    }
+                                                }
+                                            });
+                                        },
+                                        "📤 Export C++"
+                                    }
+                                }
                                 div { class: "results-count",
                                     if active_tab() == "memory" { "{results().len()} entries" } else { "{entity_results().len()} entities" }
                                 }
@@ -967,6 +997,7 @@ pub fn App() -> Element {
                                         tr {
                                             th { "Offset Path" }
                                             th { "Address" }
+                                            th { "Type" }
                                             th { "1-Byte" }
                                             th { "2-Byte" }
                                             th { "4-Byte" }
@@ -1017,6 +1048,27 @@ pub fn App() -> Element {
                                                     }
                                                 }
                                                 td { class: "col-address", "{result.actual_address:#X}" }
+                                                td { class: "col-type",
+                                                    select {
+                                                        class: "type-select",
+                                                        value: "{result.selected_type}",
+                                                        onchange: {
+                                                            move |e: Event<FormData>| {
+                                                                let mut updated = results();
+                                                                if let Some(r) = updated.get_mut(idx) {
+                                                                    r.selected_type = e.value();
+                                                                }
+                                                                results.set(updated);
+                                                            }
+                                                        },
+                                                        option { value: "i8", "i8" }
+                                                        option { value: "i16", "i16" }
+                                                        option { value: "i32", selected: result.selected_type == "i32", "i32" }
+                                                        option { value: "i64", "i64" }
+                                                        option { value: "f32", "f32" }
+                                                        option { value: "f64", "f64" }
+                                                    }
+                                                }
                                             // 1-Byte column (editable)
                                             td {
                                                 class: "col-value editable",
