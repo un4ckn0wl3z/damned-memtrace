@@ -23,6 +23,7 @@ pub fn App() -> Element {
     let mut offsets_input = use_signal(String::new);
     let mut loop_count_input = use_signal(|| String::from("1000"));
     let mut step_size = use_signal(|| 4u32);
+    let mut loop_offset_index = use_signal(|| -1i32); // -1 means last index
 
     // Display options
     let mut signed_display = use_signal(|| false);
@@ -164,6 +165,7 @@ pub fn App() -> Element {
 
         let step = step_size();
         let _signed = signed_display();
+        let offset_idx = loop_offset_index();
 
         // Start scanning in background
         is_scanning.set(true);
@@ -193,20 +195,28 @@ pub fn App() -> Element {
                 // Calculate the current offset for this iteration
                 let current_offset = (i as i64) * (step as i64);
 
-                // Build the offset path string
-                let mut offset_path = format!("[{:#X}", base_addr);
-                for off in &offsets {
-                    offset_path.push_str(&format!("+{:#X}", off));
-                }
-                offset_path.push_str(&format!("]+{:#X}", current_offset));
-
-                // Create modified offsets with the loop offset added to the last one
+                // Create modified offsets - replace the selected index with loop value
                 let mut modified_offsets = offsets.clone();
+                let target_idx = if offset_idx < 0 || offset_idx as usize >= modified_offsets.len() {
+                    if modified_offsets.is_empty() { 0 } else { modified_offsets.len() - 1 }
+                } else {
+                    offset_idx as usize
+                };
+
                 if modified_offsets.is_empty() {
                     modified_offsets.push(current_offset);
                 } else {
-                    let last_idx = modified_offsets.len() - 1;
-                    modified_offsets[last_idx] += current_offset;
+                    // Replace the offset at target index with the loop value
+                    modified_offsets[target_idx] = current_offset;
+                }
+
+                // Build the offset path string showing the modified offsets
+                let mut offset_path = format!("[[base]");
+                for (idx, off) in modified_offsets.iter().enumerate() {
+                    offset_path.push_str(&format!("+{:#X}]", off));
+                    if idx < modified_offsets.len() - 1 {
+                        // Not the last one, so there's another dereference
+                    }
                 }
 
                 // Traverse the pointer chain
@@ -396,6 +406,24 @@ pub fn App() -> Element {
                                     option { value: "16", "16 bytes" }
                                 }
                             }
+                        }
+
+                        div { class: "form-group",
+                            label { "Traverse at Index" }
+                            select {
+                                value: "{loop_offset_index}",
+                                onchange: move |e| {
+                                    if let Ok(idx) = e.value().parse::<i32>() {
+                                        loop_offset_index.set(idx);
+                                    }
+                                },
+                                option { value: "-1", "Last (default)" }
+                                option { value: "0", "Index 0" }
+                                option { value: "1", "Index 1" }
+                                option { value: "2", "Index 2" }
+                                option { value: "3", "Index 3" }
+                            }
+                            p { class: "info-text", "Which offset index to iterate (0=first, 1=second...)" }
                         }
 
                         div { class: "checkbox-group",
