@@ -544,4 +544,30 @@ body {
     color: #6e6e6e;
     font-size: 11px;
 }
+
+.editable {
+    cursor: pointer;
+    transition: background-color 0.15s;
+}
+
+.editable:hover {
+    background-color: #3d3d3d;
+}
+
+.edit-input {
+    width: 100%;
+    padding: 2px 4px;
+    border: 1px solid #4fc3f7;
+    border-radius: 2px;
+    background: #1e1e1e;
+    color: #4fc3f7;
+    font-family: "Consolas", monospace;
+    font-size: 11px;
+    outline: none;
+}
+
+.edit-input:focus {
+    border-color: #81d4fa;
+    box-shadow: 0 0 4px rgba(79, 195, 247, 0.3);
+}
 "#;

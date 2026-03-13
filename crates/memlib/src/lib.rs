@@ -9,9 +9,10 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Module32FirstW, Module32NextW, Process32FirstW, Process32NextW,
     MODULEENTRY32W, PROCESSENTRY32W, TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32, TH32CS_SNAPPROCESS,
 };
+use windows::Win32::System::Diagnostics::Debug::WriteProcessMemory;
 use windows::Win32::System::Threading::{
     IsWow64Process, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
-    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_READ,
+    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_READ, PROCESS_VM_WRITE, PROCESS_VM_OPERATION,
 };
 
 /// Process information for display
@@ -80,7 +81,7 @@ impl ProcessHandle {
     pub fn open(pid: u32) -> Option<Self> {
         unsafe {
             let handle = OpenProcess(
-                PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION,
+                PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_QUERY_LIMITED_INFORMATION,
                 false,
                 pid,
             )
@@ -110,6 +111,52 @@ impl ProcessHandle {
         }
     }
 
+    /// Write memory at the specified address
+    pub fn write_memory(&self, address: u64, buffer: &[u8]) -> bool {
+        unsafe {
+            let mut bytes_written = 0usize;
+            WriteProcessMemory(
+                self.handle,
+                address as *const _,
+                buffer.as_ptr() as *const _,
+                buffer.len(),
+                Some(&mut bytes_written),
+            )
+            .is_ok()
+                && bytes_written == buffer.len()
+        }
+    }
+
+    /// Write an i8 value
+    pub fn write_i8(&self, address: u64, value: i8) -> bool {
+        self.write_memory(address, &value.to_le_bytes())
+    }
+
+    /// Write an i16 value
+    pub fn write_i16(&self, address: u64, value: i16) -> bool {
+        self.write_memory(address, &value.to_le_bytes())
+    }
+
+    /// Write an i32 value
+    pub fn write_i32(&self, address: u64, value: i32) -> bool {
+        self.write_memory(address, &value.to_le_bytes())
+    }
+
+    /// Write an i64 value
+    pub fn write_i64(&self, address: u64, value: i64) -> bool {
+        self.write_memory(address, &value.to_le_bytes())
+    }
+
+    /// Write a f32 value
+    pub fn write_f32(&self, address: u64, value: f32) -> bool {
+        self.write_memory(address, &value.to_le_bytes())
+    }
+
+    /// Write a f64 value
+    pub fn write_f64(&self, address: u64, value: f64) -> bool {
+        self.write_memory(address, &value.to_le_bytes())
+    }
+
     /// Read a pointer (4 bytes for 32-bit, 8 bytes for 64-bit)
     pub fn read_pointer(&self, address: u64) -> Option<u64> {
         if self.is_64bit {
@@ -130,23 +177,34 @@ impl ProcessHandle {
     }
 
     /// Traverse a pointer chain and return the final address
-    /// base_address: starting address
+    /// base_address: starting address (address containing a pointer)
     /// offsets: list of offsets to follow
-    /// Returns the final address after following all pointers
+    /// 
+    /// For chain [[[base]+0x0]+0x40]+0x20]+0x0 with base=&g_pGameWorld:
+    /// 1. Read pointer at base → GameWorld addr
+    /// 2. Add 0x0 → GameWorld+0x0, read pointer → still GameWorld (0x0 offset)
+    /// 3. Add 0x40 → GameWorld+0x40, read pointer → Player addr
+    /// 4. Add 0x20 → Player+0x20, read pointer → Stats addr
+    /// 5. Add 0x0 → Stats+0x0 = health address (no dereference)
+    /// 
+    /// Number of dereferences = number of offsets (last one doesn't dereference)
     pub fn traverse_pointer_chain(&self, base_address: u64, offsets: &[i64]) -> Option<u64> {
         if offsets.is_empty() {
-            return Some(base_address);
+            // No offsets, just read pointer at base and return that address
+            return self.read_pointer(base_address);
         }
 
         let mut current_address = base_address;
 
         for (i, &offset) in offsets.iter().enumerate() {
-            // For all but the last offset, read the pointer at current address
-            if i < offsets.len() - 1 {
-                current_address = self.read_pointer(current_address)?;
-            }
+            // Read pointer at current address
+            current_address = self.read_pointer(current_address)?;
+            
             // Apply the offset
             current_address = (current_address as i64 + offset) as u64;
+            
+            // Don't dereference after the last offset - that's our target address
+            // The dereference happens at the START of each iteration
         }
 
         Some(current_address)
@@ -311,12 +369,21 @@ pub fn get_process_modules(pid: u32) -> Vec<ModuleInfo> {
     modules
 }
 
-/// Parse offset string like "0x3C4+0xC8+0x10" or "0x3C4,0xC8,0x10" into a vector of offsets
+/// Parse offset string in multiple formats:
+/// - Simple: "0x3C4+0xC8+0x10" or "0x3C4,0xC8,0x10"
+/// - Bracket (x64dbg style): "[[[base]+0x40]+0x20]+0x0" where [xxx] means pointer dereference
 pub fn parse_offsets(input: &str) -> Result<Vec<i64>, String> {
-    if input.trim().is_empty() {
+    let input = input.trim();
+    if input.is_empty() {
         return Ok(vec![]);
     }
 
+    // Check if it's bracket notation (contains '[')
+    if input.contains('[') {
+        return parse_bracket_notation(input);
+    }
+
+    // Simple format: offsets separated by + , or space
     let separators = ['+', ',', ' '];
     let parts: Vec<&str> = input
         .split(|c| separators.contains(&c))
@@ -330,6 +397,62 @@ pub fn parse_offsets(input: &str) -> Result<Vec<i64>, String> {
         offsets.push(offset);
     }
 
+    Ok(offsets)
+}
+
+/// Parse x64dbg-style bracket notation: [[[base]+0x40]+0x20]+0x0
+/// Each [...] indicates reading a pointer at that address
+/// Returns the list of offsets to apply
+fn parse_bracket_notation(input: &str) -> Result<Vec<i64>, String> {
+    let mut offsets = Vec::new();
+    let mut current = input.trim();
+    
+    // Remove leading brackets and "base" keyword if present
+    // Format: [[[base]+0x40]+0x20]+0x0
+    // We extract offsets: 0x40, 0x20, 0x0
+    
+    // Count and strip leading brackets
+    while current.starts_with('[') {
+        current = &current[1..];
+    }
+    
+    // Remove "base" or any initial text before first ]
+    if let Some(pos) = current.find(']') {
+        // Check if there's an offset before the bracket
+        let before_bracket = &current[..pos];
+        // Skip "base" keyword or empty content
+        if !before_bracket.eq_ignore_ascii_case("base") && !before_bracket.is_empty() {
+            // It might be an offset like "0x0" in [[0x0]+...]
+            if let Ok(off) = parse_hex_or_dec(before_bracket) {
+                offsets.push(off);
+            }
+        }
+        current = &current[pos..];
+    }
+    
+    // Now parse the rest: ]+0x40]+0x20]+0x0
+    // Split by ']' and extract offsets after '+'
+    for part in current.split(']') {
+        let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
+        
+        // Part should be like "+0x40" or "+0x20"
+        let offset_str = part.trim_start_matches('+').trim();
+        if offset_str.is_empty() {
+            continue;
+        }
+        
+        match parse_hex_or_dec(offset_str) {
+            Ok(off) => offsets.push(off),
+            Err(_) => {
+                // Skip non-numeric parts (like trailing text)
+                continue;
+            }
+        }
+    }
+    
     Ok(offsets)
 }
 
