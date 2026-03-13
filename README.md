@@ -12,6 +12,7 @@ A powerful Windows desktop application for memory pointer traversal and entity s
 - **Value Editing**: Double-click to edit memory values directly
 - **Custom Labels**: Double-click offset path to add custom labels (e.g., "Health", "Mana")
 - **Save/Load Results**: Export and import scan results as JSON files
+- **Export to C++**: Generate ready-to-use C++ header files for game trainers
 - **Multi-format Display**: View values as signed/unsigned integers, floats, doubles
 - **Module Browser**: Click modules to quickly set base addresses
 - **Admin Elevation**: Automatically requests administrator privileges
@@ -71,6 +72,36 @@ The executable will be at `target/release/memtrace.exe`
 - Click **💾 Save** to export results to a JSON file
 - Click **📂 Load** to import previously saved results
 - All settings, labels, and values are preserved
+
+#### Export to C++
+- Click **📤 Export C++** to generate a ready-to-use C++ header file
+- Select the data type for each field using the **Type** dropdown before exporting
+- The exported header includes:
+  - Struct layout with correct offsets and padding
+  - `GameStructReader` class with `ReadProcessMemory`/`WriteProcessMemory`
+  - Getter/setter methods for each field
+- Labels become variable names (e.g., "health" → `getHealth()`)
+
+**Example exported code:**
+```cpp
+#include <Windows.h>
+
+constexpr uintptr_t BASE_OFFSET = 0x7140;
+
+struct GameStruct {
+    int32_t health;     // 0x0
+    int32_t max_health; // 0x4
+};
+
+class GameStructReader {
+    HANDLE hProcess;
+    uintptr_t moduleBase;
+public:
+    GameStructReader(HANDLE process, uintptr_t base);
+    int32_t getHealth();
+    bool setHealth(int32_t val);
+};
+```
 
 ---
 
@@ -161,7 +192,8 @@ damned-memtrace/
 │   ├── ui/          # Dioxus UI components
 │   └── memtrace/    # Main application
 ├── assets/          # Images and resources
-└── test_target/     # C++ test application
+├── test_target/     # C++ test application
+└── test_trainer/    # Example C++ trainer using exported header
 ```
 
 ---

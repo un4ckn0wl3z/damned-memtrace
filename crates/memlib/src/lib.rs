@@ -224,24 +224,28 @@ impl ProcessHandle {
     /// 4. Add 0x20 → Player+0x20, read pointer → Stats addr
     /// 5. Add 0x0 → Stats+0x0 = health address (no dereference)
     /// 
-    /// Number of dereferences = number of offsets (last one doesn't dereference)
+    /// For [[[base]+0x0]+0x40]+0x20]+0x0:
+    /// - base+0x0, read ptr → ptr1
+    /// - ptr1+0x40, read ptr → ptr2  
+    /// - ptr2+0x20, read ptr → ptr3
+    /// - ptr3+0x0 → final address (no read, just add)
     pub fn traverse_pointer_chain(&self, base_address: u64, offsets: &[i64]) -> Option<u64> {
         if offsets.is_empty() {
-            // No offsets, just read pointer at base and return that address
-            return self.read_pointer(base_address);
+            // No offsets, just return base address
+            return Some(base_address);
         }
 
         let mut current_address = base_address;
 
-        for (_i, &offset) in offsets.iter().enumerate() {
-            // Read pointer at current address
-            current_address = self.read_pointer(current_address)?;
-            
-            // Apply the offset
+        for (i, &offset) in offsets.iter().enumerate() {
+            // Add offset first
             current_address = (current_address as i64 + offset) as u64;
             
-            // Don't dereference after the last offset - that's our target address
-            // The dereference happens at the START of each iteration
+            // For all but the last offset: dereference after adding
+            if i < offsets.len() - 1 {
+                current_address = self.read_pointer(current_address)?;
+            }
+            // Last offset: no dereference, current_address is final
         }
 
         Some(current_address)
@@ -437,56 +441,46 @@ pub fn parse_offsets(input: &str) -> Result<Vec<i64>, String> {
     Ok(offsets)
 }
 
-/// Parse x64dbg-style bracket notation: [[[base]+0x40]+0x20]+0x0
+/// Parse x64dbg-style bracket notation: [[[base]+0x0]+0x40]+0x20]+0x0
 /// Each [...] indicates reading a pointer at that address
 /// Returns the list of offsets to apply
 fn parse_bracket_notation(input: &str) -> Result<Vec<i64>, String> {
     let mut offsets = Vec::new();
-    let mut current = input.trim();
+    let input = input.trim();
     
-    // Remove leading brackets and "base" keyword if present
-    // Format: [[[base]+0x40]+0x20]+0x0
-    // We extract offsets: 0x40, 0x20, 0x0
+    // Find all +0x... patterns in the string
+    // Format: [[[base]+0x0]+0x40]+0x20]+0x0
+    // We extract offsets: 0x0, 0x40, 0x20, 0x0
     
-    // Count and strip leading brackets
-    while current.starts_with('[') {
-        current = &current[1..];
-    }
+    let mut i = 0;
+    let chars: Vec<char> = input.chars().collect();
     
-    // Remove "base" or any initial text before first ]
-    if let Some(pos) = current.find(']') {
-        // Check if there's an offset before the bracket
-        let before_bracket = &current[..pos];
-        // Skip "base" keyword or empty content
-        if !before_bracket.eq_ignore_ascii_case("base") && !before_bracket.is_empty() {
-            // It might be an offset like "0x0" in [[0x0]+...]
-            if let Ok(off) = parse_hex_or_dec(before_bracket) {
-                offsets.push(off);
+    while i < chars.len() {
+        // Look for '+' followed by an offset
+        if chars[i] == '+' {
+            i += 1;
+            // Skip whitespace
+            while i < chars.len() && chars[i].is_whitespace() {
+                i += 1;
             }
-        }
-        current = &current[pos..];
-    }
-    
-    // Now parse the rest: ]+0x40]+0x20]+0x0
-    // Split by ']' and extract offsets after '+'
-    for part in current.split(']') {
-        let part = part.trim();
-        if part.is_empty() {
-            continue;
-        }
-        
-        // Part should be like "+0x40" or "+0x20"
-        let offset_str = part.trim_start_matches('+').trim();
-        if offset_str.is_empty() {
-            continue;
-        }
-        
-        match parse_hex_or_dec(offset_str) {
-            Ok(off) => offsets.push(off),
-            Err(_) => {
-                // Skip non-numeric parts (like trailing text)
-                continue;
+            
+            // Collect the offset value (until ] or + or end)
+            let start = i;
+            while i < chars.len() && chars[i] != ']' && chars[i] != '+' {
+                i += 1;
             }
+            
+            if start < i {
+                let offset_str: String = chars[start..i].iter().collect();
+                let offset_str = offset_str.trim();
+                if !offset_str.is_empty() {
+                    if let Ok(off) = parse_hex_or_dec(offset_str) {
+                        offsets.push(off);
+                    }
+                }
+            }
+        } else {
+            i += 1;
         }
     }
     
@@ -635,7 +629,8 @@ pub fn export_to_cpp(results: &[TraversalResult], class_name: &str, base_address
     output.push_str(&format!("// Base offset from module: {:#X}\n\n", base_offset));
     output.push_str("#pragma once\n");
     output.push_str("#include <cstdint>\n");
-    output.push_str("#include <vector>\n\n");
+    output.push_str("#include <vector>\n");
+    output.push_str("#include <Windows.h>\n\n");
     
     // Define base offset constant
     output.push_str(&format!("constexpr uintptr_t BASE_OFFSET = {:#X};\n\n", base_offset));
@@ -670,31 +665,36 @@ pub fn export_to_cpp(results: &[TraversalResult], class_name: &str, base_address
     // Generate pointer chain helper class
     output.push_str("// Pointer chain helper (use with ReadProcessMemory/WriteProcessMemory)\n");
     output.push_str(&format!("class {}Reader {{\n", class_name));
+    output.push_str("    HANDLE hProcess;\n");
     output.push_str("    uintptr_t moduleBase;\n");
     output.push_str("    \n");
     output.push_str("    template<typename T>\n");
     output.push_str("    T Read(uintptr_t addr) {\n");
     output.push_str("        T val{};\n");
-    output.push_str("        // ReadProcessMemory(hProcess, (LPCVOID)addr, &val, sizeof(T), nullptr);\n");
+    output.push_str("        ReadProcessMemory(hProcess, (LPCVOID)addr, &val, sizeof(T), nullptr);\n");
     output.push_str("        return val;\n");
     output.push_str("    }\n");
     output.push_str("    \n");
     output.push_str("    template<typename T>\n");
-    output.push_str("    void Write(uintptr_t addr, T val) {\n");
-    output.push_str("        // WriteProcessMemory(hProcess, (LPVOID)addr, &val, sizeof(T), nullptr);\n");
+    output.push_str("    bool Write(uintptr_t addr, T val) {\n");
+    output.push_str("        return WriteProcessMemory(hProcess, (LPVOID)addr, &val, sizeof(T), nullptr);\n");
     output.push_str("    }\n");
     output.push_str("    \n");
+    output.push_str("    // FollowChain: add offset, then read pointer (except for last offset)\n");
     output.push_str("    uintptr_t FollowChain(uintptr_t base, std::vector<int64_t> offsets) {\n");
     output.push_str("        uintptr_t addr = base;\n");
-    output.push_str("        for (size_t i = 0; i < offsets.size() - 1; i++) {\n");
-    output.push_str("            addr = Read<uintptr_t>(addr + offsets[i]);\n");
-    output.push_str("            if (addr == 0) return 0;\n");
+    output.push_str("        for (size_t i = 0; i < offsets.size(); i++) {\n");
+    output.push_str("            addr = addr + offsets[i];\n");
+    output.push_str("            if (i < offsets.size() - 1) {\n");
+    output.push_str("                addr = Read<uintptr_t>(addr);\n");
+    output.push_str("                if (addr == 0) return 0;\n");
+    output.push_str("            }\n");
     output.push_str("        }\n");
-    output.push_str("        return addr + offsets.back();\n");
+    output.push_str("        return addr;\n");
     output.push_str("    }\n");
     output.push_str("    \n");
     output.push_str("public:\n");
-    output.push_str(&format!("    {}Reader(uintptr_t base) : moduleBase(base) {{}}\n", class_name));
+    output.push_str(&format!("    {}Reader(HANDLE process, uintptr_t base) : hProcess(process), moduleBase(base) {{}}\n", class_name));
     output.push_str("    \n");
     
     // Generate getter/setter for each field
@@ -710,9 +710,9 @@ pub fn export_to_cpp(results: &[TraversalResult], class_name: &str, base_address
             cpp_type, offsets_vec));
         output.push_str("    }\n");
         
-        // Setter - use moduleBase + BASE_OFFSET
-        output.push_str(&format!("    void set{}({} val) {{\n", capitalize(&var_name), cpp_type));
-        output.push_str(&format!("        Write<{}>(FollowChain(moduleBase + BASE_OFFSET, {{{}}}), val);\n", 
+        // Setter - use moduleBase + BASE_OFFSET, return bool
+        output.push_str(&format!("    bool set{}({} val) {{\n", capitalize(&var_name), cpp_type));
+        output.push_str(&format!("        return Write<{}>(FollowChain(moduleBase + BASE_OFFSET, {{{}}}), val);\n", 
             cpp_type, offsets_vec));
         output.push_str("    }\n");
         output.push_str("    \n");
