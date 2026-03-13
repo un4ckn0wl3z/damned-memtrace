@@ -45,6 +45,7 @@ pub struct EntityResult {
 /// Result of a memory traversal
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TraversalResult {
+    pub label: String,
     pub offset_path: String,
     pub actual_address: u64,
     pub value_i8: i8,
@@ -67,6 +68,7 @@ pub struct SavedMemoryScan {
     pub offsets: String,
     pub loop_count: u32,
     pub step_size: u32,
+    pub field_names: String,
     pub results: Vec<TraversalResult>,
 }
 
@@ -85,6 +87,7 @@ pub struct SavedEntityScan {
 impl Default for TraversalResult {
     fn default() -> Self {
         Self {
+            label: String::new(),
             offset_path: String::new(),
             actual_address: 0,
             value_i8: 0,

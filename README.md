@@ -10,8 +10,11 @@ A powerful Windows desktop application for memory pointer traversal and entity s
 - **Entity List Scanner**: Scan arrays, pointer tables, and linked lists
 - **Real-time Value Refresh**: Auto-update values at configurable intervals
 - **Value Editing**: Double-click to edit memory values directly
+- **Custom Labels**: Double-click offset path to add custom labels (e.g., "Health", "Mana")
+- **Save/Load Results**: Export and import scan results as JSON files
 - **Multi-format Display**: View values as signed/unsigned integers, floats, doubles
 - **Module Browser**: Click modules to quickly set base addresses
+- **Admin Elevation**: Automatically requests administrator privileges
 
 ---
 
@@ -55,9 +58,19 @@ The executable will be at `target/release/memtrace.exe`
 - Press **Enter** to write the new value
 - Press **Escape** to cancel
 
+#### Adding Labels
+- **Double-click** the Offset Path column to add a custom label
+- Labels display as `Label (offset_path)` format
+- Labels are saved with scan results
+
 #### Auto-Refresh
 - Check "Auto-refresh values" to continuously update
 - Set refresh interval in milliseconds (default: 500ms)
+
+#### Save/Load Results
+- Click **💾 Save** to export results to a JSON file
+- Click **📂 Load** to import previously saved results
+- All settings, labels, and values are preserved
 
 ---
 
@@ -89,6 +102,10 @@ Scan arrays of game entities (players, items, NPCs) in memory.
 - `i8` / `i16` / `i32` / `i64` - Signed integers
 - `f32` - Float (32-bit)
 - `f64` - Double (64-bit)
+
+#### Auto-Refresh & Save/Load
+- Check "Auto-refresh values" to continuously update entity values
+- Click **💾 Save** / **📂 Load** to export/import entity scan results
 
 #### Example: Scanning Player Array
 ```

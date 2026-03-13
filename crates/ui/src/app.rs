@@ -22,6 +22,7 @@ pub fn App() -> Element {
     // Input fields
     let mut base_address_input = use_signal(|| String::from("0"));
     let mut offsets_input = use_signal(String::new);
+    let mut field_names_input = use_signal(String::new);
     let mut loop_count_input = use_signal(|| String::from("1000"));
     let mut step_size = use_signal(|| 4u32);
     let mut loop_offset_index = use_signal(|| -1i32); // -1 means last index
@@ -49,6 +50,8 @@ pub fn App() -> Element {
     // Edit state
     let mut editing_cell = use_signal(|| None::<(usize, String)>); // (row_index, column_type)
     let mut edit_value = use_signal(String::new);
+    let mut editing_label = use_signal(|| None::<usize>); // row index for label editing
+    let mut label_edit_value = use_signal(String::new);
 
     // Tab state
     let mut active_tab = use_signal(|| "memory".to_string());
@@ -225,6 +228,10 @@ pub fn App() -> Element {
         let step = step_size();
         let _signed = signed_display();
         let offset_idx = loop_offset_index();
+        let field_names: Vec<String> = field_names_input()
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect();
 
         // Start scanning in background
         is_scanning.set(true);
@@ -283,6 +290,7 @@ pub fn App() -> Element {
                 {
                     let mut result = handle.read_all_types(final_addr);
                     result.offset_path = offset_path;
+                    result.label = field_names.get(i as usize).cloned().unwrap_or_default();
                     if result.valid {
                         scan_results.push(result);
                     }
@@ -453,6 +461,17 @@ pub fn App() -> Element {
                                 oninput: move |e| offsets_input.set(e.value())
                             }
                             p { class: "info-text", "Formats: [[[base]+0x40]+0x20]+0x0 or 0x40+0x20+0x0" }
+                        }
+
+                        div { class: "form-group",
+                            label { "Field Names (comma-sep, optional)" }
+                            input {
+                                r#type: "text",
+                                placeholder: "e.g. Health,Mana,Level",
+                                value: "{field_names_input}",
+                                oninput: move |e| field_names_input.set(e.value())
+                            }
+                            p { class: "info-text", "Labels for each loop iteration" }
                         }
 
                         div { class: "form-row",
@@ -761,6 +780,7 @@ pub fn App() -> Element {
                                                         offsets: offsets_input(),
                                                         loop_count: loop_count_input().parse().unwrap_or(1000),
                                                         step_size: step_size(),
+                                                        field_names: field_names_input(),
                                                         results: results(),
                                                     };
                                                     match save_memory_scan(&path, &scan) {
@@ -805,6 +825,7 @@ pub fn App() -> Element {
                                                             offsets_input.set(scan.offsets);
                                                             loop_count_input.set(scan.loop_count.to_string());
                                                             step_size.set(scan.step_size);
+                                                            field_names_input.set(scan.field_names);
                                                             results.set(scan.results);
                                                             status_message.set(format!("Loaded {}", path));
                                                         }
@@ -958,7 +979,43 @@ pub fn App() -> Element {
                                     tbody {
                                         for (idx, result) in results().into_iter().enumerate() {
                                             tr {
-                                                td { class: "col-offset", "{result.offset_path}" }
+                                                td {
+                                                    class: "col-offset editable",
+                                                    ondoubleclick: {
+                                                        let lbl = result.label.clone();
+                                                        move |_| {
+                                                            editing_label.set(Some(idx));
+                                                            label_edit_value.set(lbl.clone());
+                                                        }
+                                                    },
+                                                    if editing_label() == Some(idx) {
+                                                        input {
+                                                            class: "edit-input",
+                                                            r#type: "text",
+                                                            placeholder: "Enter label...",
+                                                            value: "{label_edit_value}",
+                                                            autofocus: true,
+                                                            oninput: move |e| label_edit_value.set(e.value()),
+                                                            onkeydown: move |e: KeyboardEvent| {
+                                                                if e.key() == Key::Enter {
+                                                                    let mut updated = results();
+                                                                    if let Some(r) = updated.get_mut(idx) {
+                                                                        r.label = label_edit_value();
+                                                                    }
+                                                                    results.set(updated);
+                                                                    editing_label.set(None);
+                                                                } else if e.key() == Key::Escape {
+                                                                    editing_label.set(None);
+                                                                }
+                                                            },
+                                                            onblur: move |_| editing_label.set(None)
+                                                        }
+                                                    } else if result.label.is_empty() {
+                                                        "{result.offset_path}"
+                                                    } else {
+                                                        "{result.label} ({result.offset_path})"
+                                                    }
+                                                }
                                                 td { class: "col-address", "{result.actual_address:#X}" }
                                             // 1-Byte column (editable)
                                             td {
