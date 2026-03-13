@@ -410,20 +410,17 @@ pub fn App() -> Element {
 
                         div { class: "form-group",
                             label { "Traverse at Index" }
-                            select {
+                            input {
+                                r#type: "text",
+                                placeholder: "-1 (last)",
                                 value: "{loop_offset_index}",
-                                onchange: move |e| {
+                                oninput: move |e| {
                                     if let Ok(idx) = e.value().parse::<i32>() {
                                         loop_offset_index.set(idx);
                                     }
-                                },
-                                option { value: "-1", "Last (default)" }
-                                option { value: "0", "Index 0" }
-                                option { value: "1", "Index 1" }
-                                option { value: "2", "Index 2" }
-                                option { value: "3", "Index 3" }
+                                }
                             }
-                            p { class: "info-text", "Which offset index to iterate (0=first, 1=second...)" }
+                            p { class: "info-text", "-1=last, 0=first, 1=second..." }
                         }
 
                         div { class: "checkbox-group",
