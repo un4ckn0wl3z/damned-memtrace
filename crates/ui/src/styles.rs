@@ -65,6 +65,36 @@ body {
     color: white;
 }
 
+.tab-bar {
+    display: flex;
+    gap: 4px;
+    background: #252525;
+    padding: 4px;
+    border-radius: 4px;
+}
+
+.tab-btn {
+    padding: 8px 16px;
+    border: none;
+    background: transparent;
+    color: #888;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+}
+
+.tab-btn:hover {
+    background: #3d3d3d;
+    color: #d4d4d4;
+}
+
+.tab-btn.active {
+    background: #4fc3f7;
+    color: #1e1e1e;
+    font-weight: 600;
+}
+
 .main-content {
     display: flex;
     flex: 1;
@@ -191,6 +221,17 @@ body {
 
 .btn-full {
     width: 100%;
+}
+
+.btn-small {
+    padding: 4px 8px;
+    font-size: 11px;
+}
+
+.results-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
 }
 
 .progress-container {

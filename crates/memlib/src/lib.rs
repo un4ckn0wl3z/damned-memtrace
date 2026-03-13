@@ -1,6 +1,7 @@
 //! Memory reading library for Windows processes
 //! Provides process enumeration, memory reading, and pointer chain traversal
 
+use serde::{Deserialize, Serialize};
 use std::mem::zeroed;
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, HANDLE, MAX_PATH, BOOL};
@@ -32,8 +33,17 @@ pub struct ModuleInfo {
     pub size: u32,
 }
 
+/// Result of entity list scan
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct EntityResult {
+    pub index: usize,
+    pub address: u64,
+    pub values: Vec<(String, i64)>,
+    pub valid: bool,
+}
+
 /// Result of a memory traversal
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TraversalResult {
     pub offset_path: String,
     pub actual_address: u64,
@@ -48,6 +58,28 @@ pub struct TraversalResult {
     pub value_f32: f32,
     pub value_f64: f64,
     pub valid: bool,
+}
+
+/// Saved scan configuration and results for Memory Traversal
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SavedMemoryScan {
+    pub base_address: String,
+    pub offsets: String,
+    pub loop_count: u32,
+    pub step_size: u32,
+    pub results: Vec<TraversalResult>,
+}
+
+/// Saved scan configuration and results for Entity List
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SavedEntityScan {
+    pub mode: String,
+    pub base_address: String,
+    pub struct_size: String,
+    pub max_count: usize,
+    pub value_offsets: String,
+    pub data_type: String,
+    pub results: Vec<EntityResult>,
 }
 
 impl Default for TraversalResult {
@@ -510,4 +542,31 @@ mod tests {
         assert_eq!(parse_base_address("1599610").unwrap(), 0x1599610);
         assert_eq!(parse_base_address("0x1599610").unwrap(), 0x1599610);
     }
+}
+
+// Re-export serde_json for UI crate
+pub use serde_json;
+
+/// Save memory scan results to JSON file
+pub fn save_memory_scan(path: &str, scan: &SavedMemoryScan) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(scan).map_err(|e| e.to_string())?;
+    std::fs::write(path, json).map_err(|e| e.to_string())
+}
+
+/// Load memory scan results from JSON file
+pub fn load_memory_scan(path: &str) -> Result<SavedMemoryScan, String> {
+    let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&json).map_err(|e| e.to_string())
+}
+
+/// Save entity scan results to JSON file
+pub fn save_entity_scan(path: &str, scan: &SavedEntityScan) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(scan).map_err(|e| e.to_string())?;
+    std::fs::write(path, json).map_err(|e| e.to_string())
+}
+
+/// Load entity scan results from JSON file
+pub fn load_entity_scan(path: &str) -> Result<SavedEntityScan, String> {
+    let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&json).map_err(|e| e.to_string())
 }

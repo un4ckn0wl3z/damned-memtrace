@@ -3,7 +3,8 @@
 use dioxus::prelude::*;
 use memlib::{
     get_process_modules, get_processes, parse_base_address, parse_offsets, ProcessHandle,
-    ProcessInfo, TraversalResult,
+    ProcessInfo, TraversalResult, EntityResult, SavedMemoryScan, SavedEntityScan,
+    save_memory_scan, load_memory_scan, save_entity_scan, load_entity_scan,
 };
 use std::sync::Arc;
 
@@ -48,6 +49,24 @@ pub fn App() -> Element {
     // Edit state
     let mut editing_cell = use_signal(|| None::<(usize, String)>); // (row_index, column_type)
     let mut edit_value = use_signal(String::new);
+
+    // Tab state
+    let mut active_tab = use_signal(|| "memory".to_string());
+
+    // Entity scanner state
+    let mut entity_mode = use_signal(|| "array".to_string());
+    let mut entity_base = use_signal(String::new);
+    let mut entity_struct_size = use_signal(|| "0x100".to_string());
+    let mut entity_max_count = use_signal(|| "100".to_string());
+    let mut entity_value_offsets = use_signal(|| "0x0".to_string());
+    let mut entity_data_type = use_signal(|| "i32".to_string());
+    let _entity_next_offset = use_signal(|| "0x8".to_string());
+    let mut entity_results = use_signal(Vec::<EntityResult>::new);
+    let mut entity_scanning = use_signal(|| false);
+    let mut entity_editing_cell = use_signal(|| None::<(usize, usize)>); // (entity_index, value_index)
+    let mut entity_edit_value = use_signal(String::new);
+    let mut entity_auto_refresh = use_signal(|| false);
+    let mut entity_refresh_interval = use_signal(|| 500u64);
 
     // Refresh process list
     let refresh_processes = move |_| {
@@ -106,6 +125,46 @@ pub fn App() -> Element {
                     }
                 }
                 results.set(updated_results);
+            }
+        }
+    });
+
+    // Entity auto-refresh timer
+    use_future(move || async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(entity_refresh_interval())).await;
+            
+            if !entity_auto_refresh() || entity_results().is_empty() || entity_scanning() {
+                continue;
+            }
+            
+            let pid = selected_pid();
+            if pid == 0 {
+                continue;
+            }
+            
+            let data_type = entity_data_type();
+            if let Some(handle) = ProcessHandle::open(pid) {
+                let mut updated = entity_results();
+                for entity in updated.iter_mut() {
+                    for (off_name, val) in entity.values.iter_mut() {
+                        let off = parse_base_address(off_name.trim_start_matches("0x").trim_start_matches("0X")).unwrap_or(0) as i64;
+                        let va = (entity.address as i64 + off) as u64;
+                        let new_val: Option<i64> = match data_type.as_str() {
+                            "i8" => { let mut b = [0u8; 1]; if handle.read_memory(va, &mut b) { Some(i8::from_le_bytes(b) as i64) } else { None } }
+                            "i16" => { let mut b = [0u8; 2]; if handle.read_memory(va, &mut b) { Some(i16::from_le_bytes(b) as i64) } else { None } }
+                            "i32" => { let mut b = [0u8; 4]; if handle.read_memory(va, &mut b) { Some(i32::from_le_bytes(b) as i64) } else { None } }
+                            "i64" => { let mut b = [0u8; 8]; if handle.read_memory(va, &mut b) { Some(i64::from_le_bytes(b)) } else { None } }
+                            "f32" => { let mut b = [0u8; 4]; if handle.read_memory(va, &mut b) { Some(f32::from_le_bytes(b).to_bits() as i64) } else { None } }
+                            "f64" => { let mut b = [0u8; 8]; if handle.read_memory(va, &mut b) { Some(f64::from_le_bytes(b).to_bits() as i64) } else { None } }
+                            _ => None
+                        };
+                        if let Some(nv) = new_val {
+                            *val = nv;
+                        }
+                    }
+                }
+                entity_results.set(updated);
             }
         }
     });
@@ -290,6 +349,20 @@ pub fn App() -> Element {
                 }
             }
 
+            // Tab bar
+            div { class: "tab-bar",
+                button {
+                    class: if active_tab() == "memory" { "tab-btn active" } else { "tab-btn" },
+                    onclick: move |_| active_tab.set("memory".to_string()),
+                    "Memory Traversal"
+                }
+                button {
+                    class: if active_tab() == "entity" { "tab-btn active" } else { "tab-btn" },
+                    onclick: move |_| active_tab.set("entity".to_string()),
+                    "Entity List"
+                }
+            }
+
             // Main content
             div { class: "main-content",
                 // Left panel - Controls
@@ -356,9 +429,10 @@ pub fn App() -> Element {
                         }
                     }
 
-                    // Scan configuration
-                    div { class: "panel",
-                        div { class: "panel-title", "Scan Configuration" }
+                    // Scan configuration (Memory tab only)
+                    if active_tab() == "memory" {
+                        div { class: "panel",
+                            div { class: "panel-title", "Scan Configuration" }
 
                         div { class: "form-group",
                             label { "Base Address (hex)" }
@@ -498,6 +572,159 @@ pub fn App() -> Element {
                         if !error_message().is_empty() {
                             p { class: "error-message", "{error_message}" }
                         }
+                        }
+                    }
+
+                    // Entity List tab panel
+                    if active_tab() == "entity" {
+                        div { class: "panel",
+                            div { class: "panel-title", "Entity List Scanner" }
+                            div { class: "form-group",
+                                label { "Mode" }
+                                select {
+                                    value: "{entity_mode}",
+                                    onchange: move |e| entity_mode.set(e.value()),
+                                    option { value: "array", "Array Scanner" }
+                                    option { value: "pointer", "Pointer Table" }
+                                    option { value: "linked", "Linked List" }
+                                }
+                            }
+                            div { class: "form-group",
+                                label { "Base Address" }
+                                input {
+                                    r#type: "text",
+                                    placeholder: "0x7FF6B6D37140",
+                                    value: "{entity_base}",
+                                    oninput: move |e| entity_base.set(e.value())
+                                }
+                            }
+                            div { class: "form-row",
+                                div { class: "form-group",
+                                    label { "Struct Size / Next Offset" }
+                                    input {
+                                        r#type: "text",
+                                        value: "{entity_struct_size}",
+                                        oninput: move |e| entity_struct_size.set(e.value())
+                                    }
+                                }
+                                div { class: "form-group",
+                                    label { "Max Count" }
+                                    input {
+                                        r#type: "text",
+                                        value: "{entity_max_count}",
+                                        oninput: move |e| entity_max_count.set(e.value())
+                                    }
+                                }
+                            }
+                            div { class: "form-group",
+                                label { "Value Offsets (comma-sep)" }
+                                input {
+                                    r#type: "text",
+                                    placeholder: "0x100,0x104,0x120",
+                                    value: "{entity_value_offsets}",
+                                    oninput: move |e| entity_value_offsets.set(e.value())
+                                }
+                            }
+                            div { class: "form-group",
+                                label { "Data Type" }
+                                select {
+                                    value: "{entity_data_type}",
+                                    onchange: move |e| entity_data_type.set(e.value()),
+                                    option { value: "i8", "i8 (1 byte)" }
+                                    option { value: "i16", "i16 (2 bytes)" }
+                                    option { value: "i32", "i32 (4 bytes)" }
+                                    option { value: "i64", "i64 (8 bytes)" }
+                                    option { value: "f32", "f32 (float)" }
+                                    option { value: "f64", "f64 (double)" }
+                                }
+                            }
+                            div { class: "form-group checkbox-group",
+                                input {
+                                    r#type: "checkbox",
+                                    id: "entity-auto-refresh",
+                                    checked: entity_auto_refresh(),
+                                    onchange: move |e| entity_auto_refresh.set(e.checked())
+                                }
+                                label { r#for: "entity-auto-refresh", "Auto-refresh values" }
+                            }
+                            div { class: "form-group",
+                                label { "Refresh Interval (ms)" }
+                                input {
+                                    r#type: "number",
+                                    value: "{entity_refresh_interval}",
+                                    oninput: move |e| {
+                                        if let Ok(v) = e.value().parse::<u64>() {
+                                            entity_refresh_interval.set(v.max(100));
+                                        }
+                                    }
+                                }
+                            }
+                            div { class: "divider" }
+                            button {
+                                class: "btn btn-primary btn-full",
+                                disabled: selected_pid() == 0 || entity_scanning(),
+                                onclick: move |_| {
+                                    let pid = selected_pid();
+                                    if pid == 0 { return; }
+                                    let base = match parse_base_address(&entity_base()) {
+                                        Ok(b) => b,
+                                        Err(_) => { status_message.set("Invalid base".to_string()); return; }
+                                    };
+                                    let struct_size = parse_base_address(&entity_struct_size()).unwrap_or(0x100) as u64;
+                                    let max_count = entity_max_count().parse::<usize>().unwrap_or(100);
+                                    let mode = entity_mode();
+                                    let value_offs: Vec<i64> = entity_value_offsets()
+                                        .split(',')
+                                        .filter_map(|s| parse_base_address(s.trim()).ok().map(|v| v as i64))
+                                        .collect();
+                                    let data_type = entity_data_type();
+                                    entity_scanning.set(true);
+                                    status_message.set("Scanning...".to_string());
+                                    spawn(async move {
+                                        let handle = match ProcessHandle::open(pid) {
+                                            Some(h) => Arc::new(h),
+                                            None => { entity_scanning.set(false); return; }
+                                        };
+                                        let mut res = Vec::new();
+                                        for i in 0..max_count {
+                                            let addr = if mode == "pointer" {
+                                                let ptr_addr = base + (i as u64) * 8;
+                                                let mut buf = [0u8; 8];
+                                                if !handle.read_memory(ptr_addr, &mut buf) { continue; }
+                                                let a = u64::from_le_bytes(buf);
+                                                if a == 0 { continue; }
+                                                a
+                                            } else {
+                                                base + (i as u64) * struct_size
+                                            };
+                                            let mut values = Vec::new();
+                                            for off in &value_offs {
+                                                let va = (addr as i64 + off) as u64;
+                                                let val: Option<i64> = match data_type.as_str() {
+                                                    "i8" => { let mut b = [0u8; 1]; if handle.read_memory(va, &mut b) { Some(i8::from_le_bytes(b) as i64) } else { None } }
+                                                    "i16" => { let mut b = [0u8; 2]; if handle.read_memory(va, &mut b) { Some(i16::from_le_bytes(b) as i64) } else { None } }
+                                                    "i32" => { let mut b = [0u8; 4]; if handle.read_memory(va, &mut b) { Some(i32::from_le_bytes(b) as i64) } else { None } }
+                                                    "i64" => { let mut b = [0u8; 8]; if handle.read_memory(va, &mut b) { Some(i64::from_le_bytes(b)) } else { None } }
+                                                    "f32" => { let mut b = [0u8; 4]; if handle.read_memory(va, &mut b) { Some(f32::from_le_bytes(b).to_bits() as i64) } else { None } }
+                                                    "f64" => { let mut b = [0u8; 8]; if handle.read_memory(va, &mut b) { Some(f64::from_le_bytes(b).to_bits() as i64) } else { None } }
+                                                    _ => { let mut b = [0u8; 4]; if handle.read_memory(va, &mut b) { Some(i32::from_le_bytes(b) as i64) } else { None } }
+                                                };
+                                                if let Some(v) = val {
+                                                    values.push((format!("{:#X}", off), v));
+                                                }
+                                            }
+                                            if !values.is_empty() {
+                                                res.push(EntityResult { index: i, address: addr, values, valid: true });
+                                            }
+                                        }
+                                        entity_results.set(res.clone());
+                                        entity_scanning.set(false);
+                                        status_message.set(format!("Found {} entities", res.len()));
+                                    });
+                                },
+                                if entity_scanning() { "Scanning..." } else { "▶ Scan" }
+                            }
+                        }
                     }
                 }
 
@@ -506,29 +733,233 @@ pub fn App() -> Element {
                     div { class: "panel results-panel",
                         div { class: "results-header",
                             div { class: "panel-title", "Results" }
-                            div { class: "results-count", "{results().len()} entries" }
+                            div { class: "results-actions",
+                                button {
+                                    class: "btn btn-small",
+                                    onclick: move |_| {
+                                        let is_memory = active_tab() == "memory";
+                                        if is_memory && results().is_empty() {
+                                            status_message.set("No results to save".to_string());
+                                            return;
+                                        }
+                                        if !is_memory && entity_results().is_empty() {
+                                            status_message.set("No results to save".to_string());
+                                            return;
+                                        }
+                                        let default_name = if is_memory { "memory_scan.json" } else { "entity_scan.json" };
+                                        spawn(async move {
+                                            let file = rfd::AsyncFileDialog::new()
+                                                .add_filter("JSON", &["json"])
+                                                .set_file_name(default_name)
+                                                .save_file()
+                                                .await;
+                                            if let Some(f) = file {
+                                                let path = f.path().to_string_lossy().to_string();
+                                                if is_memory {
+                                                    let scan = SavedMemoryScan {
+                                                        base_address: base_address_input(),
+                                                        offsets: offsets_input(),
+                                                        loop_count: loop_count_input().parse().unwrap_or(1000),
+                                                        step_size: step_size(),
+                                                        results: results(),
+                                                    };
+                                                    match save_memory_scan(&path, &scan) {
+                                                        Ok(_) => status_message.set(format!("Saved to {}", path)),
+                                                        Err(e) => status_message.set(format!("Save failed: {}", e)),
+                                                    }
+                                                } else {
+                                                    let scan = SavedEntityScan {
+                                                        mode: entity_mode(),
+                                                        base_address: entity_base(),
+                                                        struct_size: entity_struct_size(),
+                                                        max_count: entity_max_count().parse().unwrap_or(100),
+                                                        value_offsets: entity_value_offsets(),
+                                                        data_type: entity_data_type(),
+                                                        results: entity_results(),
+                                                    };
+                                                    match save_entity_scan(&path, &scan) {
+                                                        Ok(_) => status_message.set(format!("Saved to {}", path)),
+                                                        Err(e) => status_message.set(format!("Save failed: {}", e)),
+                                                    }
+                                                }
+                                            }
+                                        });
+                                    },
+                                    "💾 Save"
+                                }
+                                button {
+                                    class: "btn btn-small",
+                                    onclick: move |_| {
+                                        let is_memory = active_tab() == "memory";
+                                        spawn(async move {
+                                            let file = rfd::AsyncFileDialog::new()
+                                                .add_filter("JSON", &["json"])
+                                                .pick_file()
+                                                .await;
+                                            if let Some(f) = file {
+                                                let path = f.path().to_string_lossy().to_string();
+                                                if is_memory {
+                                                    match load_memory_scan(&path) {
+                                                        Ok(scan) => {
+                                                            base_address_input.set(scan.base_address);
+                                                            offsets_input.set(scan.offsets);
+                                                            loop_count_input.set(scan.loop_count.to_string());
+                                                            step_size.set(scan.step_size);
+                                                            results.set(scan.results);
+                                                            status_message.set(format!("Loaded {}", path));
+                                                        }
+                                                        Err(e) => status_message.set(format!("Load failed: {}", e)),
+                                                    }
+                                                } else {
+                                                    match load_entity_scan(&path) {
+                                                        Ok(scan) => {
+                                                            entity_mode.set(scan.mode);
+                                                            entity_base.set(scan.base_address);
+                                                            entity_struct_size.set(scan.struct_size);
+                                                            entity_max_count.set(scan.max_count.to_string());
+                                                            entity_value_offsets.set(scan.value_offsets);
+                                                            entity_data_type.set(scan.data_type);
+                                                            entity_results.set(scan.results);
+                                                            status_message.set(format!("Loaded {}", path));
+                                                        }
+                                                        Err(e) => status_message.set(format!("Load failed: {}", e)),
+                                                    }
+                                                }
+                                            }
+                                        });
+                                    },
+                                    "📂 Load"
+                                }
+                                div { class: "results-count",
+                                    if active_tab() == "memory" { "{results().len()} entries" } else { "{entity_results().len()} entities" }
+                                }
+                            }
                         }
 
-                        div { class: "results-table-container",
-                            table { class: "results-table",
-                                thead {
-                                    tr {
-                                        th { "Offset Path" }
-                                        th { "Address" }
-                                        th { "1-Byte" }
-                                        th { "2-Byte" }
-                                        th { "4-Byte" }
-                                        th { "8-Byte" }
-                                        th { "Float" }
-                                        th { "Double" }
-                                        th { "" }
+                        // Entity results table
+                        if active_tab() == "entity" {
+                            div { class: "results-table-container",
+                                table { class: "results-table",
+                                    thead {
+                                        tr {
+                                            th { "Index" }
+                                            th { "Address" }
+                                            for (off_name, _) in entity_results().first().map(|r| r.values.clone()).unwrap_or_default() {
+                                                th { "{off_name}" }
+                                            }
+                                            th { "" }
+                                        }
+                                    }
+                                    tbody {
+                                        for (ent_idx, entity) in entity_results().into_iter().enumerate() {
+                                            tr {
+                                                td { class: "col-value", "{entity.index}" }
+                                                td { class: "col-address", "{entity.address:#X}" }
+                                                for (val_idx, (off_name, val)) in entity.values.iter().enumerate() {
+                                                    {
+                                                        let off = parse_base_address(off_name.trim_start_matches("0x").trim_start_matches("0X")).unwrap_or(0) as i64;
+                                                        let val_addr = (entity.address as i64 + off) as u64;
+                                                        let display_val = if entity_data_type() == "f32" {
+                                                            format!("{:.3}", f32::from_bits(*val as u32))
+                                                        } else if entity_data_type() == "f64" {
+                                                            format!("{:.3}", f64::from_bits(*val as u64))
+                                                        } else {
+                                                            val.to_string()
+                                                        };
+                                                        rsx! {
+                                                            td {
+                                                                class: "col-value editable",
+                                                                ondoubleclick: {
+                                                                    let dv = display_val.clone();
+                                                                    move |_| {
+                                                                        entity_editing_cell.set(Some((ent_idx, val_idx)));
+                                                                        entity_edit_value.set(dv.clone());
+                                                                    }
+                                                                },
+                                                                if entity_editing_cell().map(|(ei, vi)| ei == ent_idx && vi == val_idx).unwrap_or(false) {
+                                                                    input {
+                                                                        class: "edit-input",
+                                                                        r#type: "text",
+                                                                        value: "{entity_edit_value}",
+                                                                        autofocus: true,
+                                                                        oninput: move |e| entity_edit_value.set(e.value()),
+                                                                        onkeydown: {
+                                                                            let dt = entity_data_type();
+                                                                            move |e: KeyboardEvent| {
+                                                                                if e.key() == Key::Enter {
+                                                                                    let pid = selected_pid();
+                                                                                    if let Some(handle) = ProcessHandle::open(pid) {
+                                                                                        let written = match dt.as_str() {
+                                                                                            "i8" => entity_edit_value().parse::<i8>().ok().map(|v| handle.write_i8(val_addr, v)).unwrap_or(false),
+                                                                                            "i16" => entity_edit_value().parse::<i16>().ok().map(|v| handle.write_i16(val_addr, v)).unwrap_or(false),
+                                                                                            "i32" => entity_edit_value().parse::<i32>().ok().map(|v| handle.write_i32(val_addr, v)).unwrap_or(false),
+                                                                                            "i64" => entity_edit_value().parse::<i64>().ok().map(|v| handle.write_i64(val_addr, v)).unwrap_or(false),
+                                                                                            "f32" => entity_edit_value().parse::<f32>().ok().map(|v| handle.write_f32(val_addr, v)).unwrap_or(false),
+                                                                                            "f64" => entity_edit_value().parse::<f64>().ok().map(|v| handle.write_f64(val_addr, v)).unwrap_or(false),
+                                                                                            _ => false
+                                                                                        };
+                                                                                        if written {
+                                                                                            status_message.set(format!("Written to {:#X}", val_addr));
+                                                                                        } else {
+                                                                                            status_message.set("Write failed".to_string());
+                                                                                        }
+                                                                                    }
+                                                                                    entity_editing_cell.set(None);
+                                                                                } else if e.key() == Key::Escape {
+                                                                                    entity_editing_cell.set(None);
+                                                                                }
+                                                                            }
+                                                                        },
+                                                                        onblur: move |_| entity_editing_cell.set(None)
+                                                                    }
+                                                                } else {
+                                                                    "{display_val}"
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                                td {
+                                                    button {
+                                                        class: "copy-btn",
+                                                        onclick: {
+                                                            let addr = entity.address;
+                                                            move |_| {
+                                                                copy_to_clipboard(format!("{:#X}", addr));
+                                                            }
+                                                        },
+                                                        "Copy"
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
-                                tbody {
-                                    for (idx, result) in results().into_iter().enumerate() {
+                            }
+                        }
+
+                        // Memory results table
+                        if active_tab() == "memory" {
+                            div { class: "results-table-container",
+                                table { class: "results-table",
+                                    thead {
                                         tr {
-                                            td { class: "col-offset", "{result.offset_path}" }
-                                            td { class: "col-address", "{result.actual_address:#X}" }
+                                            th { "Offset Path" }
+                                            th { "Address" }
+                                            th { "1-Byte" }
+                                            th { "2-Byte" }
+                                            th { "4-Byte" }
+                                            th { "8-Byte" }
+                                            th { "Float" }
+                                            th { "Double" }
+                                            th { "" }
+                                        }
+                                    }
+                                    tbody {
+                                        for (idx, result) in results().into_iter().enumerate() {
+                                            tr {
+                                                td { class: "col-offset", "{result.offset_path}" }
+                                                td { class: "col-address", "{result.actual_address:#X}" }
                                             // 1-Byte column (editable)
                                             td {
                                                 class: "col-value editable",
@@ -806,6 +1237,7 @@ pub fn App() -> Element {
                         }
                     }
                 }
+            }
             }
 
             // Status bar

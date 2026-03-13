@@ -8,3 +8,4 @@ dioxus = { version = "0.6", features = ["desktop"] }
 tokio = { version = "1", features = ["time", "sync"] }
 memlib = { path = "../memlib" }
 arboard = "3"
+rfd = "0.15"
