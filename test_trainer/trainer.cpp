@@ -113,12 +113,12 @@ int main() {
         switch (choice) {
             case 1: {
                 std::cout << "\n--- Current Stats ---\n";
-                std::cout << "Health:     " << game.getHealth() << " / " << game.getMaxHealth() << "\n";
-                std::cout << "MP:         " << game.getMp() << " / " << game.getMaxMp() << "\n";
+                std::cout << "Health:     " << game.getHealth() << " / " << game.getMax_health() << "\n";
+                std::cout << "MP:         " << game.getMp() << " / " << game.getMax_mp() << "\n";
                 break;
             }
             case 2: {
-                int maxHp = game.getMaxHealth();
+                int maxHp = game.getMax_health();
                 if (game.setHealth(maxHp)) {
                     std::cout << "Health set to " << maxHp << "!\n";
                 } else {
@@ -127,7 +127,7 @@ int main() {
                 break;
             }
             case 3: {
-                int maxMp = game.getMaxMp();
+                int maxMp = game.getMax_mp();
                 if (game.setMp(maxMp)) {
                     std::cout << "MP set to " << maxMp << "!\n";
                 } else {
@@ -136,8 +136,8 @@ int main() {
                 break;
             }
             case 4: {
-                int maxHp = game.getMaxHealth();
-                int maxMp = game.getMaxMp();
+                int maxHp = game.getMax_health();
+                int maxMp = game.getMax_mp();
                 game.setHealth(maxHp);
                 game.setMp(maxMp);
                 std::cout << "God Mode activated! HP=" << maxHp << ", MP=" << maxMp << "\n";
