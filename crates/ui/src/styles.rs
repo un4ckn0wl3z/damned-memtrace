@@ -234,6 +234,21 @@ body {
     align-items: center;
 }
 
+.type-select {
+    padding: 2px 4px;
+    background: #1e1e1e;
+    border: 1px solid #3d3d3d;
+    border-radius: 3px;
+    color: #4fc3f7;
+    font-size: 11px;
+    font-family: "Consolas", monospace;
+    cursor: pointer;
+}
+
+.col-type {
+    width: 60px;
+}
+
 .progress-container {
     margin-top: 8px;
 }
