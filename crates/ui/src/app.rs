@@ -262,6 +262,14 @@ pub fn App() -> Element {
                         "−"
                     }
                     button {
+                        onclick: move |_: MouseEvent| {
+                            let window = dioxus::desktop::window();
+                            let is_max = window.is_maximized();
+                            window.set_maximized(!is_max);
+                        },
+                        "□"
+                    }
+                    button {
                         class: "close",
                         onclick: move |_: MouseEvent| {
                             let window = dioxus::desktop::window();
@@ -853,6 +861,64 @@ pub fn App() -> Element {
                             }
                         }
                     }
+                }
+            }
+
+            // Resize handles for borderless window
+            div {
+                class: "resize-handle resize-handle-n",
+                onmousedown: move |_| {
+                    let window = dioxus::desktop::window();
+                    let _ = window.drag_resize_window(dioxus::desktop::tao::window::ResizeDirection::North);
+                }
+            }
+            div {
+                class: "resize-handle resize-handle-s",
+                onmousedown: move |_| {
+                    let window = dioxus::desktop::window();
+                    let _ = window.drag_resize_window(dioxus::desktop::tao::window::ResizeDirection::South);
+                }
+            }
+            div {
+                class: "resize-handle resize-handle-e",
+                onmousedown: move |_| {
+                    let window = dioxus::desktop::window();
+                    let _ = window.drag_resize_window(dioxus::desktop::tao::window::ResizeDirection::East);
+                }
+            }
+            div {
+                class: "resize-handle resize-handle-w",
+                onmousedown: move |_| {
+                    let window = dioxus::desktop::window();
+                    let _ = window.drag_resize_window(dioxus::desktop::tao::window::ResizeDirection::West);
+                }
+            }
+            div {
+                class: "resize-handle resize-handle-nw",
+                onmousedown: move |_| {
+                    let window = dioxus::desktop::window();
+                    let _ = window.drag_resize_window(dioxus::desktop::tao::window::ResizeDirection::NorthWest);
+                }
+            }
+            div {
+                class: "resize-handle resize-handle-ne",
+                onmousedown: move |_| {
+                    let window = dioxus::desktop::window();
+                    let _ = window.drag_resize_window(dioxus::desktop::tao::window::ResizeDirection::NorthEast);
+                }
+            }
+            div {
+                class: "resize-handle resize-handle-sw",
+                onmousedown: move |_| {
+                    let window = dioxus::desktop::window();
+                    let _ = window.drag_resize_window(dioxus::desktop::tao::window::ResizeDirection::SouthWest);
+                }
+            }
+            div {
+                class: "resize-handle resize-handle-se",
+                onmousedown: move |_| {
+                    let window = dioxus::desktop::window();
+                    let _ = window.drag_resize_window(dioxus::desktop::tao::window::ResizeDirection::SouthEast);
                 }
             }
         }

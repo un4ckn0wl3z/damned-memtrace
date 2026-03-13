@@ -196,7 +196,7 @@ impl ProcessHandle {
 
         let mut current_address = base_address;
 
-        for (i, &offset) in offsets.iter().enumerate() {
+        for (_i, &offset) in offsets.iter().enumerate() {
             // Read pointer at current address
             current_address = self.read_pointer(current_address)?;
             
