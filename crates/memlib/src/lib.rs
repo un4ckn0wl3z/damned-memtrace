@@ -1,7 +1,23 @@
 //! Memory reading library for Windows processes
 //! Provides process enumeration, memory reading, and pointer chain traversal
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+fn deserialize_f32_or_null<'de, D>(deserializer: D) -> Result<f32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt = Option::<f32>::deserialize(deserializer)?;
+    Ok(opt.unwrap_or(0.0))
+}
+
+fn deserialize_f64_or_null<'de, D>(deserializer: D) -> Result<f64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let opt = Option::<f64>::deserialize(deserializer)?;
+    Ok(opt.unwrap_or(0.0))
+}
 use std::mem::zeroed;
 use windows::core::PWSTR;
 use windows::Win32::Foundation::{CloseHandle, HANDLE, MAX_PATH, BOOL};
@@ -57,7 +73,9 @@ pub struct TraversalResult {
     pub value_u16: u16,
     pub value_u32: u32,
     pub value_u64: u64,
+    #[serde(default, deserialize_with = "deserialize_f32_or_null")]
     pub value_f32: f32,
+    #[serde(default, deserialize_with = "deserialize_f64_or_null")]
     pub value_f64: f64,
     pub valid: bool,
     pub export_selected: bool,
