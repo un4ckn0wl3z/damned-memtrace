@@ -249,6 +249,17 @@ body {
     width: 60px;
 }
 
+.col-export {
+    width: 50px;
+    text-align: center;
+}
+
+.col-export input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
 .progress-container {
     margin-top: 8px;
 }
@@ -695,5 +706,76 @@ body {
     width: 8px;
     height: 8px;
     cursor: se-resize;
+}
+
+.filter-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    align-items: center;
+}
+
+.filter-input {
+    flex: 1;
+    padding: 6px 10px;
+    background: #2d2d2d;
+    border: 1px solid #3d3d3d;
+    border-radius: 4px;
+    color: #e0e0e0;
+    font-size: 12px;
+}
+
+.filter-input:focus {
+    outline: none;
+    border-color: #4fc3f7;
+}
+
+.filter-input::placeholder {
+    color: #757575;
+}
+
+.changed-values-panel {
+    background: #1e1e1e;
+    border: 1px solid #3d3d3d;
+    border-radius: 4px;
+    margin: 8px 0;
+    padding: 12px;
+    max-height: 250px;
+    display: flex;
+    flex-direction: column;
+}
+
+.changed-values-panel .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #3d3d3d;
+}
+
+.changed-values-panel h3 {
+    margin: 0;
+    font-size: 14px;
+    color: #ff9800;
+}
+
+.changed-values-panel .results-table-container {
+    flex: 1;
+    overflow-y: auto;
+    max-height: 180px;
+}
+
+.changed-row {
+    background: rgba(255, 152, 0, 0.1) !important;
+}
+
+.changed-row:hover {
+    background: rgba(255, 152, 0, 0.2) !important;
+}
+
+.changed-value {
+    color: #ff9800;
+    font-weight: bold;
 }
 "#;

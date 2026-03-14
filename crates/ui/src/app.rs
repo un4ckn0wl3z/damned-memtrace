@@ -52,6 +52,14 @@ pub fn App() -> Element {
     let mut edit_value = use_signal(String::new);
     let mut editing_label = use_signal(|| None::<usize>); // row index for label editing
     let mut label_edit_value = use_signal(String::new);
+    
+    // Changed values tracking
+    let mut previous_values = use_signal(std::collections::HashMap::<usize, i64>::new);
+    let mut changed_indices = use_signal(Vec::<usize>::new);
+    
+    // Search/filter state
+    let mut results_filter = use_signal(String::new);
+    let mut changed_filter = use_signal(String::new);
 
     // Tab state
     let mut active_tab = use_signal(|| "memory".to_string());
@@ -109,12 +117,35 @@ pub fn App() -> Element {
                 continue;
             }
             
-            // Refresh values for all results
+            // Refresh values for all results and track changes
             if let Some(handle) = ProcessHandle::open(pid) {
                 let mut updated_results = results();
-                for result in updated_results.iter_mut() {
+                let mut prev = previous_values();
+                let mut new_changed = Vec::new();
+                
+                for (idx, result) in updated_results.iter_mut().enumerate() {
                     let new_result = handle.read_all_types(result.actual_address);
                     if new_result.valid {
+                        // Get current value based on selected type
+                        let current_val = match result.selected_type.as_str() {
+                            "i8" => new_result.value_i8 as i64,
+                            "i16" => new_result.value_i16 as i64,
+                            "i32" => new_result.value_i32 as i64,
+                            "i64" => new_result.value_i64,
+                            "u8" => new_result.value_u8 as i64,
+                            "u16" => new_result.value_u16 as i64,
+                            "u32" => new_result.value_u32 as i64,
+                            _ => new_result.value_i32 as i64,
+                        };
+                        
+                        // Check if value changed
+                        if let Some(&old_val) = prev.get(&idx) {
+                            if old_val != current_val {
+                                new_changed.push(idx);
+                            }
+                        }
+                        prev.insert(idx, current_val);
+                        
                         result.value_i8 = new_result.value_i8;
                         result.value_u8 = new_result.value_u8;
                         result.value_i16 = new_result.value_i16;
@@ -127,6 +158,20 @@ pub fn App() -> Element {
                         result.value_f64 = new_result.value_f64;
                     }
                 }
+                
+                // Update changed indices (keep recent changes, max 50)
+                if !new_changed.is_empty() {
+                    let mut all_changed = changed_indices();
+                    for idx in new_changed {
+                        if !all_changed.contains(&idx) {
+                            all_changed.insert(0, idx);
+                        }
+                    }
+                    all_changed.truncate(50);
+                    changed_indices.set(all_changed);
+                }
+                
+                previous_values.set(prev);
                 results.set(updated_results);
             }
         }
@@ -855,11 +900,23 @@ pub fn App() -> Element {
                                     button {
                                         class: "btn btn-small",
                                         onclick: move |_| {
-                                            if results().is_empty() {
-                                                status_message.set("No results to export".to_string());
+                                            let mut updated = results();
+                                            let all_selected = updated.iter().all(|r| r.export_selected);
+                                            for r in updated.iter_mut() {
+                                                r.export_selected = !all_selected;
+                                            }
+                                            results.set(updated);
+                                        },
+                                        "☑ Toggle All"
+                                    }
+                                    button {
+                                        class: "btn btn-small",
+                                        onclick: move |_| {
+                                            let selected: Vec<_> = results().into_iter().filter(|r| r.export_selected).collect();
+                                            if selected.is_empty() {
+                                                status_message.set("No fields selected for export".to_string());
                                                 return;
                                             }
-                                            let res = results();
                                             let base = base_address_input();
                                             let offs = offsets_input();
                                             spawn(async move {
@@ -870,9 +927,9 @@ pub fn App() -> Element {
                                                     .await;
                                                 if let Some(f) = file {
                                                     let path = f.path().to_string_lossy().to_string();
-                                                    let cpp_code = export_to_cpp(&res, "GameStruct", &base, &offs);
+                                                    let cpp_code = export_to_cpp(&selected, "GameStruct", &base, &offs);
                                                     match std::fs::write(&path, cpp_code) {
-                                                        Ok(_) => status_message.set(format!("Exported to {}", path)),
+                                                        Ok(_) => status_message.set(format!("Exported {} fields to {}", selected.len(), path)),
                                                         Err(e) => status_message.set(format!("Export failed: {}", e)),
                                                     }
                                                 }
@@ -883,6 +940,26 @@ pub fn App() -> Element {
                                 }
                                 div { class: "results-count",
                                     if active_tab() == "memory" { "{results().len()} entries" } else { "{entity_results().len()} entities" }
+                                }
+                            }
+                        }
+                        
+                        // Search/filter input
+                        if active_tab() == "memory" && !results().is_empty() {
+                            div { class: "filter-row",
+                                input {
+                                    class: "filter-input",
+                                    r#type: "text",
+                                    placeholder: "Filter by offset, label, address, or value...",
+                                    value: "{results_filter}",
+                                    oninput: move |e| results_filter.set(e.value())
+                                }
+                                if !results_filter().is_empty() {
+                                    button {
+                                        class: "btn btn-small",
+                                        onclick: move |_| results_filter.set(String::new()),
+                                        "Clear"
+                                    }
                                 }
                             }
                         }
@@ -995,6 +1072,7 @@ pub fn App() -> Element {
                                 table { class: "results-table",
                                     thead {
                                         tr {
+                                            th { class: "col-export", "Export" }
                                             th { "Offset Path" }
                                             th { "Address" }
                                             th { "Type" }
@@ -1008,8 +1086,29 @@ pub fn App() -> Element {
                                         }
                                     }
                                     tbody {
-                                        for (idx, result) in results().into_iter().enumerate() {
+                                        for (idx, result) in results().into_iter().enumerate().filter(|(_, r)| {
+                                            let filter = results_filter().to_lowercase();
+                                            if filter.is_empty() { return true; }
+                                            r.label.to_lowercase().contains(&filter) ||
+                                            r.offset_path.to_lowercase().contains(&filter) ||
+                                            format!("{:#X}", r.actual_address).to_lowercase().contains(&filter) ||
+                                            r.value_i32.to_string().contains(&filter) ||
+                                            r.value_i64.to_string().contains(&filter)
+                                        }) {
                                             tr {
+                                                td { class: "col-export",
+                                                    input {
+                                                        r#type: "checkbox",
+                                                        checked: result.export_selected,
+                                                        onchange: move |_| {
+                                                            let mut updated = results();
+                                                            if let Some(r) = updated.get_mut(idx) {
+                                                                r.export_selected = !r.export_selected;
+                                                            }
+                                                            results.set(updated);
+                                                        }
+                                                    }
+                                                }
                                                 td {
                                                     class: "col-offset editable",
                                                     ondoubleclick: {
@@ -1343,10 +1442,94 @@ pub fn App() -> Element {
                                     }
                                 }
                             }
+                            }
+                            
+                            // Changed Values Panel (inside results panel)
+                            if !changed_indices().is_empty() {
+                                div { class: "changed-values-panel",
+                                    div { class: "panel-header",
+                                        h3 { "Changed Values ({changed_indices().len()})" }
+                                        button {
+                                            class: "btn btn-small",
+                                            onclick: move |_| {
+                                                changed_indices.set(Vec::new());
+                                            },
+                                            "Clear"
+                                        }
+                                    }
+                                    div { class: "filter-row",
+                                        input {
+                                            class: "filter-input",
+                                            r#type: "text",
+                                            placeholder: "Filter changed values...",
+                                            value: "{changed_filter}",
+                                            oninput: move |e| changed_filter.set(e.value())
+                                        }
+                                    }
+                                    div { class: "results-table-container",
+                                        table { class: "results-table",
+                                            thead {
+                                                tr {
+                                                    th { "#" }
+                                                    th { "Offset Path" }
+                                                    th { "Address" }
+                                                    th { "Type" }
+                                                    th { "Value" }
+                                                }
+                                            }
+                                            tbody {
+                                                for idx in changed_indices().into_iter().filter(|&idx| {
+                                                    let filter = changed_filter().to_lowercase();
+                                                    if filter.is_empty() { return true; }
+                                                    if let Some(r) = results().get(idx) {
+                                                        r.label.to_lowercase().contains(&filter) ||
+                                                        r.offset_path.to_lowercase().contains(&filter) ||
+                                                        format!("{:#X}", r.actual_address).to_lowercase().contains(&filter) ||
+                                                        r.value_i32.to_string().contains(&filter)
+                                                    } else { false }
+                                                }) {
+                                                    if let Some(result) = results().get(idx) {
+                                                        {
+                                                            let result = result.clone();
+                                                            rsx! {
+                                                                tr { class: "changed-row",
+                                                                    td { "{idx}" }
+                                                                    td { 
+                                                                        if result.label.is_empty() {
+                                                                            "{result.offset_path}"
+                                                                        } else {
+                                                                            "{result.label}"
+                                                                        }
+                                                                    }
+                                                                    td { "{result.actual_address:#X}" }
+                                                                    td { "{result.selected_type}" }
+                                                                    td { class: "changed-value",
+                                                                        {match result.selected_type.as_str() {
+                                                                            "i8" => result.value_i8.to_string(),
+                                                                            "i16" => result.value_i16.to_string(),
+                                                                            "i32" => result.value_i32.to_string(),
+                                                                            "i64" => result.value_i64.to_string(),
+                                                                            "u8" => result.value_u8.to_string(),
+                                                                            "u16" => result.value_u16.to_string(),
+                                                                            "u32" => result.value_u32.to_string(),
+                                                                            "f32" => format!("{:.2}", result.value_f32),
+                                                                            "f64" => format!("{:.2}", result.value_f64),
+                                                                            _ => result.value_i32.to_string(),
+                                                                        }}
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-            }
             }
 
             // Status bar
