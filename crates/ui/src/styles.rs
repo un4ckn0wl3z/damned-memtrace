@@ -249,6 +249,17 @@ body {
     width: 60px;
 }
 
+.col-export {
+    width: 50px;
+    text-align: center;
+}
+
+.col-export input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
 .progress-container {
     margin-top: 8px;
 }

@@ -6,6 +6,8 @@ Cargo.lock
 
 # C++ / CMake
 /test_target/build/
+/test_gui_trainer/build/
+/test_gui_trainer/imgui/
 *.obj
 *.o
 *.exe

@@ -60,6 +60,7 @@ pub struct TraversalResult {
     pub value_f32: f32,
     pub value_f64: f64,
     pub valid: bool,
+    pub export_selected: bool,
 }
 
 /// Saved scan configuration and results for Memory Traversal
@@ -103,6 +104,7 @@ impl Default for TraversalResult {
             value_f32: 0.0,
             value_f64: 0.0,
             valid: false,
+            export_selected: true,
         }
     }
 }

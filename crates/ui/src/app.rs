@@ -855,11 +855,23 @@ pub fn App() -> Element {
                                     button {
                                         class: "btn btn-small",
                                         onclick: move |_| {
-                                            if results().is_empty() {
-                                                status_message.set("No results to export".to_string());
+                                            let mut updated = results();
+                                            let all_selected = updated.iter().all(|r| r.export_selected);
+                                            for r in updated.iter_mut() {
+                                                r.export_selected = !all_selected;
+                                            }
+                                            results.set(updated);
+                                        },
+                                        "☑ Toggle All"
+                                    }
+                                    button {
+                                        class: "btn btn-small",
+                                        onclick: move |_| {
+                                            let selected: Vec<_> = results().into_iter().filter(|r| r.export_selected).collect();
+                                            if selected.is_empty() {
+                                                status_message.set("No fields selected for export".to_string());
                                                 return;
                                             }
-                                            let res = results();
                                             let base = base_address_input();
                                             let offs = offsets_input();
                                             spawn(async move {
@@ -870,9 +882,9 @@ pub fn App() -> Element {
                                                     .await;
                                                 if let Some(f) = file {
                                                     let path = f.path().to_string_lossy().to_string();
-                                                    let cpp_code = export_to_cpp(&res, "GameStruct", &base, &offs);
+                                                    let cpp_code = export_to_cpp(&selected, "GameStruct", &base, &offs);
                                                     match std::fs::write(&path, cpp_code) {
-                                                        Ok(_) => status_message.set(format!("Exported to {}", path)),
+                                                        Ok(_) => status_message.set(format!("Exported {} fields to {}", selected.len(), path)),
                                                         Err(e) => status_message.set(format!("Export failed: {}", e)),
                                                     }
                                                 }
@@ -995,6 +1007,7 @@ pub fn App() -> Element {
                                 table { class: "results-table",
                                     thead {
                                         tr {
+                                            th { class: "col-export", "Export" }
                                             th { "Offset Path" }
                                             th { "Address" }
                                             th { "Type" }
@@ -1010,6 +1023,19 @@ pub fn App() -> Element {
                                     tbody {
                                         for (idx, result) in results().into_iter().enumerate() {
                                             tr {
+                                                td { class: "col-export",
+                                                    input {
+                                                        r#type: "checkbox",
+                                                        checked: result.export_selected,
+                                                        onchange: move |_| {
+                                                            let mut updated = results();
+                                                            if let Some(r) = updated.get_mut(idx) {
+                                                                r.export_selected = !r.export_selected;
+                                                            }
+                                                            results.set(updated);
+                                                        }
+                                                    }
+                                                }
                                                 td {
                                                     class: "col-offset editable",
                                                     ondoubleclick: {
