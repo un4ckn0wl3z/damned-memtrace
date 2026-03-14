@@ -1,21 +1,28 @@
 # Damned Memory Traversal Tool
 
-A powerful Windows desktop application for memory pointer traversal and entity scanning. Built with Rust and Dioxus for a modern, responsive UI.
+A powerful Windows desktop application for memory pointer traversal and entity scanning. Built with Rust and Dioxus for a modern, responsive UI. Perfect for game hacking research, reverse engineering, and creating trainers.
 
 ![Memory Traversal](assets/image1.png)
 
 ## Features
 
+### Core Features
 - **Memory Traversal**: Follow pointer chains with configurable offsets
 - **Entity List Scanner**: Scan arrays, pointer tables, and linked lists
 - **Real-time Value Refresh**: Auto-update values at configurable intervals
 - **Value Editing**: Double-click to edit memory values directly
 - **Custom Labels**: Double-click offset path to add custom labels (e.g., "Health", "Mana")
 - **Save/Load Results**: Export and import scan results as JSON files
-- **Export to C++**: Generate ready-to-use C++ header files for game trainers
 - **Multi-format Display**: View values as signed/unsigned integers, floats, doubles
 - **Module Browser**: Click modules to quickly set base addresses
 - **Admin Elevation**: Automatically requests administrator privileges
+
+### New in v0.3.0
+- **Changed Values Tracking**: Separate panel showing values that changed during auto-refresh - perfect for finding active memory addresses
+- **Search/Filter**: Filter both Results and Changed Values tables by offset, label, address, or value
+- **Export Selection**: Checkbox to select which fields to export to C++
+- **Toggle All Export**: Quickly select/deselect all fields for export
+- **Export to C++**: Generate ready-to-use C++ header files for both external and internal trainers
 
 ---
 
@@ -74,25 +81,30 @@ The executable will be at `target/release/memtrace.exe`
 - All settings, labels, and values are preserved
 
 #### Export to C++
+- Use the **Export** checkbox column to select which fields to export
+- Click **🔘 Toggle All** to quickly select/deselect all fields
+- Select the data type for each field using the **Type** dropdown
 - Click **📤 Export C++** to generate a ready-to-use C++ header file
-- Select the data type for each field using the **Type** dropdown before exporting
 - The exported header includes:
-  - Struct layout with correct offsets and padding
-  - `GameStructReader` class with `ReadProcessMemory`/`WriteProcessMemory`
-  - Getter/setter methods for each field
-- Labels become variable names (e.g., "health" → `getHealth()`)
+  - `GameStruct` - Struct layout with correct offsets and padding for **internal DLL** use
+  - `GameStructReader` - Class with `ReadProcessMemory`/`WriteProcessMemory` for **external trainer** use
+  - Getter/setter methods for each labeled field
+- Labels become variable names (e.g., "health" → `getHealth()`, `player->health`)
 
 **Example exported code:**
 ```cpp
 #include <Windows.h>
 
-constexpr uintptr_t BASE_OFFSET = 0x7140;
+constexpr uintptr_t BASE_OFFSET = 0x0;
 
+// For internal DLL - direct memory access
 struct GameStruct {
-    int32_t health;     // 0x0
-    int32_t max_health; // 0x4
+    char _pad0[0xEC];
+    int32_t health;     // 0xEC
+    int32_t armor;      // 0xF0
 };
 
+// For external trainer - ReadProcessMemory/WriteProcessMemory
 class GameStructReader {
     HANDLE hProcess;
     uintptr_t moduleBase;
@@ -102,6 +114,13 @@ public:
     bool setHealth(int32_t val);
 };
 ```
+
+#### Changed Values Panel
+- Enable **Auto-refresh values** to start tracking changes
+- Values that change appear in the **Changed Values** panel below results
+- Use the filter to search changed values by offset, label, or value
+- Click **Clear** to reset the tracking
+- Perfect for finding active memory (e.g., shoot gun → find ammo offset)
 
 ---
 
@@ -183,17 +202,44 @@ The test target creates:
 - **Framework**: Dioxus 0.6 (Rust)
 - **Platform**: Windows (uses Windows API for memory access)
 - **Architecture**: x64
+- **Version**: 0.3.0
 
 ### Project Structure
 ```
 damned-memtrace/
 ├── crates/
-│   ├── memlib/      # Memory reading/writing library
-│   ├── ui/          # Dioxus UI components
-│   └── memtrace/    # Main application
-├── assets/          # Images and resources
-├── test_target/     # C++ test application
-└── test_trainer/    # Example C++ trainer using exported header
+│   ├── memlib/           # Memory reading/writing library
+│   ├── ui/               # Dioxus UI components
+│   └── memtrace/         # Main application
+├── assets/               # Images and resources
+├── test_target/          # C++ test application
+├── test_gui_trainer/     # Example ImGui external trainer (DirectX11)
+└── test_internal_dll/    # Example internal DLL cheat
+```
+
+### Example Projects
+
+#### External Trainer (test_gui_trainer/)
+An ImGui-based external trainer using the exported `GameStructReader` class:
+```cpp
+GameStructReader* game = new GameStructReader(hProcess, moduleBase);
+game->setHealth(1000);      // God mode
+game->setRifle_ammo(999);   // Infinite ammo
+```
+
+#### Internal DLL (test_internal_dll/)
+A DLL cheat using the exported `GameStruct` for direct memory access:
+```cpp
+GameStruct* player = GetLocalPlayer();
+player->health = 1000;      // Direct memory write
+player->armor = 1000;
+```
+
+Build with CMake:
+```bash
+cd test_gui_trainer/build   # or test_internal_dll/build
+cmake .. -G "Visual Studio 17 2022" -A Win32
+cmake --build . --config Release
 ```
 
 ---
