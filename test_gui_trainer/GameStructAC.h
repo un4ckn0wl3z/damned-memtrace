@@ -11,19 +11,23 @@ constexpr uintptr_t BASE_OFFSET = 0x0;
 
 // Struct layout (use with direct memory access)
 struct GameStruct {
-    char _pad0[0xEC];
+    char _pad0[0x28];
+    float x; // 0x28
+    float y; // 0x2C
+    float z; // 0x30
+    char _pad1[0xB8];
     int32_t health; // 0xEC
     int32_t armor; // 0xF0
-    char _pad1[0x14];
+    char _pad2[0x14];
     int32_t pistal_mag; // 0x108
-    char _pad2[0x10];
+    char _pad3[0x10];
     int32_t rifle_mag; // 0x11C
-    char _pad3[0xC];
+    char _pad4[0xC];
     int32_t pistal_ammo; // 0x12C
-    char _pad4[0x10];
+    char _pad5[0x10];
     int32_t rifle_ammo; // 0x140
     int32_t bomb; // 0x144
-    char _pad5[0x20];
+    char _pad6[0x20];
     int32_t rapid_bomb; // 0x168
 };
 
@@ -59,6 +63,27 @@ class GameStructReader {
     
 public:
     GameStructReader(HANDLE process, uintptr_t base) : hProcess(process), moduleBase(base) {}
+    
+    float getX() {
+        return Read<float>(FollowChain(moduleBase + BASE_OFFSET, {0x17E0A8, 0x28}));
+    }
+    bool setX(float val) {
+        return Write<float>(FollowChain(moduleBase + BASE_OFFSET, {0x17E0A8, 0x28}), val);
+    }
+    
+    float getY() {
+        return Read<float>(FollowChain(moduleBase + BASE_OFFSET, {0x17E0A8, 0x2C}));
+    }
+    bool setY(float val) {
+        return Write<float>(FollowChain(moduleBase + BASE_OFFSET, {0x17E0A8, 0x2C}), val);
+    }
+    
+    float getZ() {
+        return Read<float>(FollowChain(moduleBase + BASE_OFFSET, {0x17E0A8, 0x30}));
+    }
+    bool setZ(float val) {
+        return Write<float>(FollowChain(moduleBase + BASE_OFFSET, {0x17E0A8, 0x30}), val);
+    }
     
     int32_t getHealth() {
         return Read<int32_t>(FollowChain(moduleBase + BASE_OFFSET, {0x17E0A8, 0xEC}));

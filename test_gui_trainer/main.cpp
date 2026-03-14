@@ -42,6 +42,7 @@ bool g_infiniteAmmo = false;
 bool g_infiniteGrenades = false;
 
 // Cached values
+float g_x = 0, g_y = 0, g_z = 0;
 int g_health = 0;
 int g_armor = 0;
 int g_pistolMag = 0;
@@ -129,6 +130,9 @@ void DetachFromGame() {
 void UpdateValues() {
     if (!g_attached || !g_game) return;
     
+    g_x = g_game->getX();
+    g_y = g_game->getY();
+    g_z = g_game->getZ();
     g_health = g_game->getHealth();
     g_armor = g_game->getArmor();
     g_pistolMag = g_game->getPistal_mag();
@@ -261,6 +265,7 @@ void RenderTrainerUI() {
         
         // Current values
         ImGui::Text("Current Values");
+        ImGui::Text("Position: X=%.2f Y=%.2f Z=%.2f", g_x, g_y, g_z);
         ImGui::Text("Health: %d", g_health);
         ImGui::Text("Armor: %d", g_armor);
         

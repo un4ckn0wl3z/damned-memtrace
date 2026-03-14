@@ -707,4 +707,49 @@ body {
     height: 8px;
     cursor: se-resize;
 }
+
+.changed-values-panel {
+    background: #1e1e1e;
+    border: 1px solid #3d3d3d;
+    border-radius: 4px;
+    margin: 8px 0;
+    padding: 12px;
+    max-height: 200px;
+    display: flex;
+    flex-direction: column;
+}
+
+.changed-values-panel .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #3d3d3d;
+}
+
+.changed-values-panel h3 {
+    margin: 0;
+    font-size: 14px;
+    color: #ff9800;
+}
+
+.changed-values-panel .results-table-container {
+    flex: 1;
+    overflow-y: auto;
+    max-height: 180px;
+}
+
+.changed-row {
+    background: rgba(255, 152, 0, 0.1) !important;
+}
+
+.changed-row:hover {
+    background: rgba(255, 152, 0, 0.2) !important;
+}
+
+.changed-value {
+    color: #ff9800;
+    font-weight: bold;
+}
 "#;

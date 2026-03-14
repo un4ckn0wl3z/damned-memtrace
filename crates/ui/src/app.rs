@@ -52,6 +52,10 @@ pub fn App() -> Element {
     let mut edit_value = use_signal(String::new);
     let mut editing_label = use_signal(|| None::<usize>); // row index for label editing
     let mut label_edit_value = use_signal(String::new);
+    
+    // Changed values tracking
+    let mut previous_values = use_signal(std::collections::HashMap::<usize, i64>::new);
+    let mut changed_indices = use_signal(Vec::<usize>::new);
 
     // Tab state
     let mut active_tab = use_signal(|| "memory".to_string());
@@ -109,12 +113,35 @@ pub fn App() -> Element {
                 continue;
             }
             
-            // Refresh values for all results
+            // Refresh values for all results and track changes
             if let Some(handle) = ProcessHandle::open(pid) {
                 let mut updated_results = results();
-                for result in updated_results.iter_mut() {
+                let mut prev = previous_values();
+                let mut new_changed = Vec::new();
+                
+                for (idx, result) in updated_results.iter_mut().enumerate() {
                     let new_result = handle.read_all_types(result.actual_address);
                     if new_result.valid {
+                        // Get current value based on selected type
+                        let current_val = match result.selected_type.as_str() {
+                            "i8" => new_result.value_i8 as i64,
+                            "i16" => new_result.value_i16 as i64,
+                            "i32" => new_result.value_i32 as i64,
+                            "i64" => new_result.value_i64,
+                            "u8" => new_result.value_u8 as i64,
+                            "u16" => new_result.value_u16 as i64,
+                            "u32" => new_result.value_u32 as i64,
+                            _ => new_result.value_i32 as i64,
+                        };
+                        
+                        // Check if value changed
+                        if let Some(&old_val) = prev.get(&idx) {
+                            if old_val != current_val {
+                                new_changed.push(idx);
+                            }
+                        }
+                        prev.insert(idx, current_val);
+                        
                         result.value_i8 = new_result.value_i8;
                         result.value_u8 = new_result.value_u8;
                         result.value_i16 = new_result.value_i16;
@@ -127,6 +154,20 @@ pub fn App() -> Element {
                         result.value_f64 = new_result.value_f64;
                     }
                 }
+                
+                // Update changed indices (keep recent changes, max 50)
+                if !new_changed.is_empty() {
+                    let mut all_changed = changed_indices();
+                    for idx in new_changed {
+                        if !all_changed.contains(&idx) {
+                            all_changed.insert(0, idx);
+                        }
+                    }
+                    all_changed.truncate(50);
+                    changed_indices.set(all_changed);
+                }
+                
+                previous_values.set(prev);
                 results.set(updated_results);
             }
         }
@@ -1369,10 +1410,76 @@ pub fn App() -> Element {
                                     }
                                 }
                             }
+                            }
+                            
+                            // Changed Values Panel (inside results panel)
+                            if !changed_indices().is_empty() {
+                                div { class: "changed-values-panel",
+                                    div { class: "panel-header",
+                                        h3 { "Changed Values ({changed_indices().len()})" }
+                                        button {
+                                            class: "btn btn-small",
+                                            onclick: move |_| {
+                                                changed_indices.set(Vec::new());
+                                            },
+                                            "Clear"
+                                        }
+                                    }
+                                    div { class: "results-table-container",
+                                        table { class: "results-table",
+                                            thead {
+                                                tr {
+                                                    th { "#" }
+                                                    th { "Offset Path" }
+                                                    th { "Address" }
+                                                    th { "Type" }
+                                                    th { "Value" }
+                                                }
+                                            }
+                                            tbody {
+                                                for idx in changed_indices().into_iter() {
+                                                    if let Some(result) = results().get(idx) {
+                                                        {
+                                                            let result = result.clone();
+                                                            rsx! {
+                                                                tr { class: "changed-row",
+                                                                    td { "{idx}" }
+                                                                    td { 
+                                                                        if result.label.is_empty() {
+                                                                            "{result.offset_path}"
+                                                                        } else {
+                                                                            "{result.label}"
+                                                                        }
+                                                                    }
+                                                                    td { "{result.actual_address:#X}" }
+                                                                    td { "{result.selected_type}" }
+                                                                    td { class: "changed-value",
+                                                                        {match result.selected_type.as_str() {
+                                                                            "i8" => result.value_i8.to_string(),
+                                                                            "i16" => result.value_i16.to_string(),
+                                                                            "i32" => result.value_i32.to_string(),
+                                                                            "i64" => result.value_i64.to_string(),
+                                                                            "u8" => result.value_u8.to_string(),
+                                                                            "u16" => result.value_u16.to_string(),
+                                                                            "u32" => result.value_u32.to_string(),
+                                                                            "f32" => format!("{:.2}", result.value_f32),
+                                                                            "f64" => format!("{:.2}", result.value_f64),
+                                                                            _ => result.value_i32.to_string(),
+                                                                        }}
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-            }
             }
 
             // Status bar
