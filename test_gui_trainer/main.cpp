@@ -224,22 +224,11 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 }
 
 void RenderTrainerUI() {
-    // Position ImGui window at 0,0 and fill the entire client area
+    // Fill entire client area, no title bar (Windows has the title)
     ImGui::SetNextWindowPos(ImVec2(0, 0));
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
-    ImGui::Begin("AssaultCube Trainer", &g_running, 
-        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize);
-    
-    // Move the actual Windows window when dragging ImGui title bar
-    if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
-        POINT pt;
-        GetCursorPos(&pt);
-        RECT rect;
-        GetWindowRect(g_hwnd, &rect);
-        int width = rect.right - rect.left;
-        int height = rect.bottom - rect.top;
-        SetWindowPos(g_hwnd, nullptr, pt.x - width/2, pt.y - 10, 0, 0, SWP_NOSIZE | SWP_NOZORDER);
-    }
+    ImGui::Begin("##Trainer", &g_running, 
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse);
     
     // Connection status
     if (g_attached) {
@@ -319,19 +308,12 @@ void RenderTrainerUI() {
 }
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-    // Create borderless transparent window
+    // Create normal window with title bar
     WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, GetModuleHandle(nullptr), nullptr, nullptr, nullptr, nullptr, L"ACTrainer", nullptr };
     RegisterClassExW(&wc);
-    g_hwnd = CreateWindowExW(
-        WS_EX_TOPMOST | WS_EX_LAYERED,
-        wc.lpszClassName, L"",
-        WS_POPUP,
-        100, 100, 420, 500,
-        nullptr, nullptr, wc.hInstance, nullptr
-    );
-    
-    // Make window transparent
-    SetLayeredWindowAttributes(g_hwnd, RGB(0, 0, 0), 0, LWA_COLORKEY);
+    g_hwnd = CreateWindowW(wc.lpszClassName, L"AssaultCube Trainer", 
+        WS_OVERLAPPEDWINDOW & ~WS_MAXIMIZEBOX & ~WS_THICKFRAME, 
+        100, 100, 420, 520, nullptr, nullptr, wc.hInstance, nullptr);
 
     // Initialize Direct3D
     if (!CreateDeviceD3D(g_hwnd)) {
