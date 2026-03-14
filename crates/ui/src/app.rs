@@ -56,6 +56,10 @@ pub fn App() -> Element {
     // Changed values tracking
     let mut previous_values = use_signal(std::collections::HashMap::<usize, i64>::new);
     let mut changed_indices = use_signal(Vec::<usize>::new);
+    
+    // Search/filter state
+    let mut results_filter = use_signal(String::new);
+    let mut changed_filter = use_signal(String::new);
 
     // Tab state
     let mut active_tab = use_signal(|| "memory".to_string());
@@ -939,6 +943,26 @@ pub fn App() -> Element {
                                 }
                             }
                         }
+                        
+                        // Search/filter input
+                        if active_tab() == "memory" && !results().is_empty() {
+                            div { class: "filter-row",
+                                input {
+                                    class: "filter-input",
+                                    r#type: "text",
+                                    placeholder: "Filter by offset, label, address, or value...",
+                                    value: "{results_filter}",
+                                    oninput: move |e| results_filter.set(e.value())
+                                }
+                                if !results_filter().is_empty() {
+                                    button {
+                                        class: "btn btn-small",
+                                        onclick: move |_| results_filter.set(String::new()),
+                                        "Clear"
+                                    }
+                                }
+                            }
+                        }
 
                         // Entity results table
                         if active_tab() == "entity" {
@@ -1062,7 +1086,15 @@ pub fn App() -> Element {
                                         }
                                     }
                                     tbody {
-                                        for (idx, result) in results().into_iter().enumerate() {
+                                        for (idx, result) in results().into_iter().enumerate().filter(|(_, r)| {
+                                            let filter = results_filter().to_lowercase();
+                                            if filter.is_empty() { return true; }
+                                            r.label.to_lowercase().contains(&filter) ||
+                                            r.offset_path.to_lowercase().contains(&filter) ||
+                                            format!("{:#X}", r.actual_address).to_lowercase().contains(&filter) ||
+                                            r.value_i32.to_string().contains(&filter) ||
+                                            r.value_i64.to_string().contains(&filter)
+                                        }) {
                                             tr {
                                                 td { class: "col-export",
                                                     input {
@@ -1425,6 +1457,15 @@ pub fn App() -> Element {
                                             "Clear"
                                         }
                                     }
+                                    div { class: "filter-row",
+                                        input {
+                                            class: "filter-input",
+                                            r#type: "text",
+                                            placeholder: "Filter changed values...",
+                                            value: "{changed_filter}",
+                                            oninput: move |e| changed_filter.set(e.value())
+                                        }
+                                    }
                                     div { class: "results-table-container",
                                         table { class: "results-table",
                                             thead {
@@ -1437,7 +1478,16 @@ pub fn App() -> Element {
                                                 }
                                             }
                                             tbody {
-                                                for idx in changed_indices().into_iter() {
+                                                for idx in changed_indices().into_iter().filter(|&idx| {
+                                                    let filter = changed_filter().to_lowercase();
+                                                    if filter.is_empty() { return true; }
+                                                    if let Some(r) = results().get(idx) {
+                                                        r.label.to_lowercase().contains(&filter) ||
+                                                        r.offset_path.to_lowercase().contains(&filter) ||
+                                                        format!("{:#X}", r.actual_address).to_lowercase().contains(&filter) ||
+                                                        r.value_i32.to_string().contains(&filter)
+                                                    } else { false }
+                                                }) {
                                                     if let Some(result) = results().get(idx) {
                                                         {
                                                             let result = result.clone();

@@ -708,13 +708,39 @@ body {
     cursor: se-resize;
 }
 
+.filter-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 8px;
+    align-items: center;
+}
+
+.filter-input {
+    flex: 1;
+    padding: 6px 10px;
+    background: #2d2d2d;
+    border: 1px solid #3d3d3d;
+    border-radius: 4px;
+    color: #e0e0e0;
+    font-size: 12px;
+}
+
+.filter-input:focus {
+    outline: none;
+    border-color: #4fc3f7;
+}
+
+.filter-input::placeholder {
+    color: #757575;
+}
+
 .changed-values-panel {
     background: #1e1e1e;
     border: 1px solid #3d3d3d;
     border-radius: 4px;
     margin: 8px 0;
     padding: 12px;
-    max-height: 200px;
+    max-height: 250px;
     display: flex;
     flex-direction: column;
 }
