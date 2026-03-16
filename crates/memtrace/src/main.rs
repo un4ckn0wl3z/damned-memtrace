@@ -18,6 +18,7 @@ fn main() {
                         .with_title("Damned Memory Traversal Tool")
                         .with_decorations(false)
                         .with_inner_size(LogicalSize::new(1100.0, 700.0))
+                        .with_min_inner_size(LogicalSize::new(800.0, 500.0))
                         .with_resizable(true),
                 ),
         )

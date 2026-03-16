@@ -103,11 +103,12 @@ body {
 }
 
 .left-panel {
-    width: 280px;
+    width: 240px;
     display: flex;
     flex-direction: column;
     gap: 8px;
     flex-shrink: 0;
+    overflow-y: auto;
 }
 
 .right-panel {
@@ -312,6 +313,7 @@ body {
 
 .results-table {
     width: 100%;
+    min-width: 600px;
     border-collapse: collapse;
     font-size: 11px;
     font-family: "Consolas", monospace;
@@ -777,5 +779,83 @@ body {
 .changed-value {
     color: #ff9800;
     font-weight: bold;
+}
+
+/* Responsive: medium viewport (< 950px wide) */
+@media (max-width: 950px) {
+    .left-panel {
+        width: 200px;
+    }
+
+    .panel {
+        padding: 8px;
+    }
+
+    .tab-btn {
+        padding: 6px 12px;
+        font-size: 12px;
+    }
+
+    .form-group {
+        margin-bottom: 8px;
+    }
+
+    .module-list {
+        max-height: 90px;
+    }
+}
+
+/* Responsive: narrow viewport (< 750px wide) */
+@media (max-width: 750px) {
+    .main-content {
+        flex-direction: column;
+    }
+
+    .left-panel {
+        width: 100%;
+        max-height: 260px;
+        flex-shrink: 1;
+        overflow-y: auto;
+    }
+
+    .right-panel {
+        min-height: 0;
+    }
+
+    .module-list {
+        max-height: 70px;
+    }
+}
+
+/* Responsive: short viewport (< 550px tall) */
+@media (max-height: 550px) {
+    .app-container {
+        padding: 4px;
+        gap: 4px;
+    }
+
+    .module-list {
+        max-height: 70px;
+    }
+
+    .changed-values-panel {
+        max-height: 150px;
+    }
+
+    .changed-values-panel .results-table-container {
+        max-height: 100px;
+    }
+
+    .panel {
+        padding: 6px;
+    }
+
+    .form-group {
+        margin-bottom: 6px;
+    }
+
+    .tab-btn {
+        padding: 5px 10px;
+    }
 }
 "#;
