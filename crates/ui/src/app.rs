@@ -1585,7 +1585,7 @@ pub fn App() -> Element {
                 span {
                     {if selected_pid() > 0 { format!("PID: {}", selected_pid()) } else { "No process selected".to_string() }}
                 }
-                span { class: "version", "v0.2.0" }
+                span { class: "version", {format!("v{}", env!("CARGO_PKG_VERSION"))} }
             }
 
             // About modal
