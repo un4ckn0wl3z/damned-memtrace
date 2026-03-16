@@ -7,6 +7,7 @@ use memlib::{
     save_memory_scan, load_memory_scan, save_entity_scan, load_entity_scan, export_to_cpp,
 };
 use std::sync::Arc;
+use std::collections::HashMap;
 
 use crate::styles::STYLES;
 
@@ -78,6 +79,9 @@ pub fn App() -> Element {
     let mut entity_edit_value = use_signal(String::new);
     let mut entity_auto_refresh = use_signal(|| false);
     let mut entity_refresh_interval = use_signal(|| 500u64);
+
+    // Pending scan flag (used to auto-scan after load)
+    let mut pending_scan = use_signal(|| false);
 
     // Refresh process list
     let refresh_processes = move |_| {
@@ -233,8 +237,8 @@ pub fn App() -> Element {
         }
     });
 
-    // Start scan
-    let start_scan = move |_| {
+    // Core scan logic (reusable from button click and auto-scan after load)
+    let mut do_scan = move || {
         error_message.set(String::new());
 
         // Parse base address
@@ -276,6 +280,24 @@ pub fn App() -> Element {
         let field_names: Vec<String> = field_names_input()
             .split(',')
             .map(|s| s.trim().to_string())
+            .collect();
+
+        // Capture existing labels (from loaded JSON or previous scan) keyed by offset_path
+        let previous_labels: HashMap<String, String> = results()
+            .iter()
+            .filter(|r| !r.label.is_empty())
+            .map(|r| (r.offset_path.clone(), r.label.clone()))
+            .collect();
+
+        // Also capture export_selected and selected_type from previous results
+        let previous_export: HashMap<String, bool> = results()
+            .iter()
+            .map(|r| (r.offset_path.clone(), r.export_selected))
+            .collect();
+        let previous_type: HashMap<String, String> = results()
+            .iter()
+            .filter(|r| !r.selected_type.is_empty())
+            .map(|r| (r.offset_path.clone(), r.selected_type.clone()))
             .collect();
 
         // Start scanning in background
@@ -334,8 +356,18 @@ pub fn App() -> Element {
                 if let Some(final_addr) = handle.traverse_pointer_chain(base_addr, &modified_offsets)
                 {
                     let mut result = handle.read_all_types(final_addr);
-                    result.offset_path = offset_path;
-                    result.label = field_names.get(i as usize).cloned().unwrap_or_default();
+                    result.offset_path = offset_path.clone();
+                    // Preserve label from previous results; fall back to field_names input
+                    result.label = previous_labels.get(&offset_path).cloned()
+                        .or_else(|| field_names.get(i as usize).cloned().filter(|s| !s.is_empty()))
+                        .unwrap_or_default();
+                    // Preserve export_selected and selected_type from previous results
+                    if let Some(&exported) = previous_export.get(&offset_path) {
+                        result.export_selected = exported;
+                    }
+                    if let Some(sel_type) = previous_type.get(&offset_path) {
+                        result.selected_type = sel_type.clone();
+                    }
                     if result.valid {
                         scan_results.push(result);
                     }
@@ -348,6 +380,19 @@ pub fn App() -> Element {
             status_message.set(format!("Scan complete: {} results", scan_results.len()));
         });
     };
+
+    // Start scan (button handler)
+    let start_scan = move |_| {
+        do_scan();
+    };
+
+    // Auto-scan after loading JSON
+    use_effect(move || {
+        if pending_scan() {
+            pending_scan.set(false);
+            do_scan();
+        }
+    });
 
     // Stop scan
     let stop_scan = move |_| {
@@ -872,7 +917,9 @@ pub fn App() -> Element {
                                                             step_size.set(scan.step_size);
                                                             field_names_input.set(scan.field_names);
                                                             results.set(scan.results);
-                                                            status_message.set(format!("Loaded {}", path));
+                                                            status_message.set(format!("Loaded {} — starting scan...", path));
+                                                            // Auto-trigger scan to refresh values while preserving labels
+                                                            pending_scan.set(true);
                                                         }
                                                         Err(e) => status_message.set(format!("Load failed: {}", e)),
                                                     }
