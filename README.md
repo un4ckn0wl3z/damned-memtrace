@@ -17,13 +17,6 @@ A powerful Windows desktop application for memory pointer traversal and entity s
 - **Module Browser**: Click modules to quickly set base addresses
 - **Admin Elevation**: Automatically requests administrator privileges
 
-### New in v0.3.0
-- **Changed Values Tracking**: Separate panel showing values that changed during auto-refresh - perfect for finding active memory addresses
-- **Search/Filter**: Filter both Results and Changed Values tables by offset, label, address, or value
-- **Export Selection**: Checkbox to select which fields to export to C++
-- **Toggle All Export**: Quickly select/deselect all fields for export
-- **Export to C++**: Generate ready-to-use C++ header files for both external and internal trainers
-
 ---
 
 ## Installation
